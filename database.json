@@ -1,0 +1,89 @@
+{
+    "sensor_data": {
+        "latest": {
+            "temperature": 32.5,
+            "soil_moisture": 58.2,
+            "timestamp": "2026-02-25T10:00:00"
+        },
+        "history": {
+            "sensor_001": {
+                "temperature": 31.8,
+                "soil_moisture": 60.1,
+                "timestamp": "2026-02-25T08:00:00"
+            },
+            "sensor_002": {
+                "temperature": 32.5,
+                "soil_moisture": 58.2,
+                "timestamp": "2026-02-25T10:00:00"
+            }
+        }
+    },
+    "etc_calculation": {
+        "latest": {
+            "etc_value": 4.2,
+            "calculation_date": "2026-02-25"
+        },
+        "history": {
+            "etc_001": {
+                "etc_value": 4.0,
+                "calculation_date": "2026-02-24"
+            },
+            "etc_002": {
+                "etc_value": 4.2,
+                "calculation_date": "2026-02-25"
+            }
+        }
+    },
+    "fuzzy_result": {
+        "latest": {
+            "etc_value": 4.2,
+            "soil_moisture": 58.2,
+            "output_duration": 35,
+            "timestamp": "2026-02-25T10:01:00"
+        },
+        "history": {
+            "fuzzy_001": {
+                "etc_value": 4.0,
+                "soil_moisture": 60.1,
+                "output_duration": 30,
+                "timestamp": "2026-02-25T08:01:00"
+            },
+            "fuzzy_002": {
+                "etc_value": 4.2,
+                "soil_moisture": 58.2,
+                "output_duration": 35,
+                "timestamp": "2026-02-25T10:01:00"
+            }
+        }
+    },
+    "irrigation_log": {
+        "latest": {
+            "duration": 35,
+            "water_volume": 700,
+            "mode": "ETC_FUZZY",
+            "start_time": "2026-02-25T10:01:10",
+            "end_time": "2026-02-25T10:01:45"
+        },
+        "history": {
+            "log_001": {
+                "duration": 30,
+                "water_volume": 600,
+                "mode": "FUZZY_ONLY",
+                "start_time": "2026-02-25T08:01:10",
+                "end_time": "2026-02-25T08:01:40"
+            },
+            "log_002": {
+                "duration": 35,
+                "water_volume": 700,
+                "mode": "ETC_FUZZY",
+                "start_time": "2026-02-25T10:01:10",
+                "end_time": "2026-02-25T10:01:45"
+            }
+        }
+    },
+    "system_control": {
+        "mode": "ETC_FUZZY",
+        "pump_status": "OFF",
+        "flow_rate_ml_per_sec": 20
+    }
+}

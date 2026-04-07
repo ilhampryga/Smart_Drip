@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "59592844887",
+    "firebase_url": "https://smart-drip-iot-default-rtdb.firebaseio.com",
+    "project_id": "smart-drip-iot",
+    "storage_bucket": "smart-drip-iot.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:59592844887:android:40c0c9a6fd2a0decb1a512",
+        "android_client_info": {
+          "package_name": "com.example.test_monitoring_apps"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAVC5gJm0YV-fGiN4n3ndEjih6v3ymDWrU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
