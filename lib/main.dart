@@ -20,9 +20,6 @@ class MyApp extends StatelessWidget {
       brightness: Brightness.light,
     );
 
-    // Helvetica is a system font on iOS/macOS. On Android we use the Google
-    // Fonts equivalent (Roboto Condensed / NotoSans). We use a system-font
-    // fallback approach: prefer Helvetica, fallback to Google Fonts' NotoSans.
     final baseTextTheme = GoogleFonts.notoSansTextTheme();
     final textTheme = baseTextTheme.apply(
       fontFamilyFallback: const ['Helvetica', 'Arial', 'sans-serif'],
