@@ -131,4 +131,21 @@ class FirebaseService {
   Future<void> setIrrigationMode(String mode) async {
     await _db.ref('system_control/mode').set(mode);
   }
+
+  /// Save plant configuration data (phase, optional exact age, latitude).
+  Future<void> savePlantConfig({
+    required String phase,
+    required String phaseRange,
+    int? exactAge,
+    double? latitude,
+  }) async {
+    final data = <String, dynamic>{
+      'phase': phase,
+      'phase_range': phaseRange,
+      if (exactAge != null) 'exact_age_days': exactAge,
+      if (latitude != null) 'latitude': latitude,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    await _db.ref('plant_config/latest').set(data);
+  }
 }

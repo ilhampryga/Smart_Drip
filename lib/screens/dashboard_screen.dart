@@ -15,9 +15,6 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final List<int> _plantAges = [15, 30, 45, 60, 75, 90];
-  int _selectedAge = 30;
-
   final _svc = FirebaseService.instance;
 
   @override
@@ -28,16 +25,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dashboard'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12.0),
-            child: _PlantAgeDropdown(
-              ages: _plantAges,
-              selected: _selectedAge,
-              onChanged: (val) => setState(() => _selectedAge = val),
-            ),
-          ),
-        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -236,50 +223,3 @@ class _LegendItem extends StatelessWidget {
   }
 }
 
-// ──────────────────────────────────────────────
-// Plant age dropdown
-// ──────────────────────────────────────────────
-
-class _PlantAgeDropdown extends StatelessWidget {
-  const _PlantAgeDropdown({
-    required this.ages,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final List<int> ages;
-  final int selected;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        border: Border.all(color: cs.outline),
-        borderRadius: BorderRadius.circular(10),
-        color: Colors.white,
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<int>(
-          value: selected,
-          isDense: true,
-          style: theme.textTheme.labelMedium?.copyWith(color: cs.onSurface),
-          icon: Icon(Icons.expand_more, size: 18, color: cs.onSurfaceVariant),
-          items: ages
-              .map(
-                (age) => DropdownMenuItem(value: age, child: Text('$age hari')),
-              )
-              .toList(),
-          onChanged: (val) {
-            if (val != null) onChanged(val);
-          },
-          hint: const Text('Umur Tanaman (hari)'),
-        ),
-      ),
-    );
-  }
-}

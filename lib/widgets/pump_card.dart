@@ -28,7 +28,54 @@ class _PumpCardState extends State<PumpCard> {
     _isOn = widget.initialValue;
   }
 
+  /// Show a yes/no confirmation dialog before toggling the pump.
+  Future<bool> _confirm(bool newVal) async {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(
+              newVal ? Icons.power_settings_new : Icons.power_off_outlined,
+              color: newVal ? cs.primary : cs.error,
+              size: 26,
+            ),
+            const SizedBox(width: 10),
+            const Text('Konfirmasi Pompa'),
+          ],
+        ),
+        content: Text(
+          newVal
+              ? 'Apakah Anda yakin ingin menyalakan pompa?'
+              : 'Apakah Anda yakin ingin mematikan pompa?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Tidak'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: newVal ? cs.primary : cs.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   Future<void> _toggle(bool val) async {
+    final yes = await _confirm(val);
+    if (!yes) return;
     setState(() => _isOn = val);
     await FirebaseService.instance.setPumpStatus(val);
     widget.onChanged?.call(val);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
 import 'control_screen.dart';
 import 'log_screen.dart';
+import 'plant_config_screen.dart';
 
 /// Root screen that hosts the [NavigationBar] and an [IndexedStack] to
 /// preserve the state of each tab as the user navigates.
@@ -19,6 +20,7 @@ class _MainScreenState extends State<MainScreen> {
     DashboardScreen(),
     ControlScreen(),
     LogScreen(),
+    PlantConfigScreen(),
   ];
 
   @override
@@ -47,6 +49,11 @@ class _MainScreenState extends State<MainScreen> {
             icon: Icon(Icons.article_outlined, color: cs.onSurfaceVariant),
             selectedIcon: Icon(Icons.article, color: cs.primary),
             label: 'Log',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.eco_outlined, color: cs.onSurfaceVariant),
+            selectedIcon: Icon(Icons.eco, color: cs.primary),
+            label: 'Tanaman',
           ),
         ],
       ),

@@ -1,6 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'firebase_options.dart';
 import 'screens/main_screen.dart';
 
@@ -20,12 +19,13 @@ class MyApp extends StatelessWidget {
       brightness: Brightness.light,
     );
 
-    // Helvetica is a system font on iOS/macOS. On Android we use the Google
-    // Fonts equivalent (Roboto Condensed / NotoSans). We use a system-font
-    // fallback approach: prefer Helvetica, fallback to Google Fonts' NotoSans.
-    final baseTextTheme = GoogleFonts.notoSansTextTheme();
-    final textTheme = baseTextTheme.apply(
-      fontFamilyFallback: const ['Helvetica', 'Arial', 'sans-serif'],
+    // Use Helvetica/Arial as the primary font family.
+    // On iOS/macOS Helvetica renders natively; on Android it falls back to
+    // the system sans-serif (which is Roboto but styled similarly).
+    const helveticaFamily = 'Helvetica';
+    final textTheme = ThemeData.light().textTheme.apply(
+      fontFamily: helveticaFamily,
+      fontFamilyFallback: const ['Arial', 'sans-serif'],
     );
 
     return MaterialApp(

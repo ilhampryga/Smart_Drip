@@ -120,7 +120,7 @@ class ControlScreen extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Private irrigation mode card
+// Private irrigation mode card — with confirmation dialog on mode switch
 // ---------------------------------------------------------------------------
 
 class _IrrigationModeCard extends StatelessWidget {
@@ -135,6 +135,39 @@ class _IrrigationModeCard extends StatelessWidget {
   final bool nonEtcEnabled;
   final ValueChanged<bool> onEtcFuzzyChanged;
   final ValueChanged<bool> onNonEtcChanged;
+
+  Future<bool> _confirmModeChange(BuildContext context, String modeName) async {
+    final cs = Theme.of(context).colorScheme;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.swap_horiz_rounded, color: cs.primary, size: 26),
+            const SizedBox(width: 10),
+            const Text('Ganti Mode'),
+          ],
+        ),
+        content: Text(
+          'Apakah Anda yakin ingin mengubah mode irigasi ke "$modeName"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Tidak'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -159,14 +192,24 @@ class _IrrigationModeCard extends StatelessWidget {
               title: 'ETc + Fuzzy Logic Mode',
               subtitle: 'Irigasi berdasar ETc & Fuzzy Logic',
               value: etcFuzzyEnabled,
-              onChanged: onEtcFuzzyChanged,
+              onChanged: (val) async {
+                if (!val) return; // only allow turning ON (exclusive mode)
+                final yes = await _confirmModeChange(
+                    context, 'ETc + Fuzzy Logic');
+                if (yes) onEtcFuzzyChanged(val);
+              },
             ),
             Divider(color: cs.outlineVariant, height: 24),
             _ModeRow(
               title: 'Non ETc Mode',
               subtitle: 'Irigasi tanpa kalkulasi ETc',
               value: nonEtcEnabled,
-              onChanged: onNonEtcChanged,
+              onChanged: (val) async {
+                if (!val) return; // only allow turning ON (exclusive mode)
+                final yes =
+                    await _confirmModeChange(context, 'Non ETc');
+                if (yes) onNonEtcChanged(val);
+              },
             ),
           ],
         ),
