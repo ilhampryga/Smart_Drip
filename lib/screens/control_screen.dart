@@ -14,7 +14,7 @@ class ControlScreen extends StatelessWidget {
     final cs = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Kontrol')),
+      appBar: AppBar(title: const Text('Kontroll')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),

@@ -19,6 +19,7 @@ class MyApp extends StatelessWidget {
       brightness: Brightness.light,
     );
 
+<<<<<<< HEAD
     // Use Helvetica/Arial as the primary font family.
     // On iOS/macOS Helvetica renders natively; on Android it falls back to
     // the system sans-serif (which is Roboto but styled similarly).
@@ -26,6 +27,11 @@ class MyApp extends StatelessWidget {
     final textTheme = ThemeData.light().textTheme.apply(
       fontFamily: helveticaFamily,
       fontFamilyFallback: const ['Arial', 'sans-serif'],
+=======
+    final baseTextTheme = GoogleFonts.notoSansTextTheme();
+    final textTheme = baseTextTheme.apply(
+      fontFamilyFallback: const ['Helvetica', 'Arial', 'sans-serif'],
+>>>>>>> e41a8644f314d01f5ac184a274abb4aade6697f7
     );
 
     return MaterialApp(
