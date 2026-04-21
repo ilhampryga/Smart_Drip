@@ -3,6 +3,7 @@ import '../widgets/sensor_card.dart';
 import '../widgets/pump_card.dart';
 import '../widgets/sensor_line_chart.dart';
 import '../widgets/water_usage_bar_chart.dart';
+import '../widgets/weather_card.dart';
 import '../services/firebase_service.dart';
 import '../models/sensor_data.dart' show SensorData;
 import '../models/system_control.dart' show SystemControl;
@@ -88,6 +89,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
+
+                          // ── Weather card (BMKG) ──
+                          StreamBuilder<Map<String, dynamic>>(
+                            stream: _svc.plantConfigStream,
+                            builder: (ctx, plantSnap) {
+                              final lat = (plantSnap.data?['latitude'] as num?)
+                                  ?.toDouble();
+                              final lon = (plantSnap.data?['longitude'] as num?)
+                                  ?.toDouble();
+                              return WeatherCard(
+                                latitude: lat,
+                                longitude: lon,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
 
                           // ── Sensor history chart ──
                           _ChartCard(

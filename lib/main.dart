@@ -1,5 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
 import 'firebase_options.dart';
 import 'screens/main_screen.dart';
 import 'screens/splash_screen.dart';
@@ -20,14 +22,8 @@ class MyApp extends StatelessWidget {
       brightness: Brightness.light,
     );
 
-    // Use Helvetica/Arial as the primary font family.
-    // On iOS/macOS Helvetica renders natively; on Android it falls back to
-    // the system sans-serif (which is Roboto but styled similarly).
-    const helveticaFamily = 'Helvetica';
-    final textTheme = ThemeData.light().textTheme.apply(
-      fontFamily: helveticaFamily,
-      fontFamilyFallback: const ['Arial', 'sans-serif'],
-    );
+    // Use Montserrat from google_fonts as the primary font family
+    final textTheme = GoogleFonts.montserratTextTheme(ThemeData.light().textTheme);
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,

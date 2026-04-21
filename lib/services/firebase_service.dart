@@ -2,17 +2,11 @@ import 'package:firebase_database/firebase_database.dart';
 import '../models/sensor_data.dart';
 import '../models/system_control.dart';
 
-/// Singleton service that provides streams and write helpers for
-/// Firebase Realtime Database.
 class FirebaseService {
   FirebaseService._();
   static final FirebaseService instance = FirebaseService._();
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
-
-  // -------------------------------------------------------------------------
-  // Latest-value Streams
-  // -------------------------------------------------------------------------
 
   /// Latest sensor reading (temperature + soil moisture).
   Stream<SensorData> get sensorDataStream {
@@ -59,9 +53,6 @@ class FirebaseService {
     });
   }
 
-  // -------------------------------------------------------------------------
-  // History Streams (for charts)
-  // -------------------------------------------------------------------------
 
   /// All sensor history records sorted by timestamp ascending.
   Stream<List<SensorData>> get sensorHistoryStream {
@@ -118,10 +109,6 @@ class FirebaseService {
     });
   }
 
-  // -------------------------------------------------------------------------
-  // Write helpers
-  // -------------------------------------------------------------------------
-
   /// Set pump status to ON or OFF.
   Future<void> setPumpStatus(bool isOn) async {
     await _db.ref('system_control/pump_status').set(isOn ? 'ON' : 'OFF');
@@ -132,18 +119,29 @@ class FirebaseService {
     await _db.ref('system_control/mode').set(mode);
   }
 
+  /// Stream of plant configuration (phase, latitude, etc.).
+  Stream<Map<String, dynamic>> get plantConfigStream {
+    return _db.ref('plant_config/latest').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <String, dynamic>{};
+      return Map<String, dynamic>.from(raw as Map);
+    });
+  }
+
   /// Save plant configuration data (phase, optional exact age, latitude).
   Future<void> savePlantConfig({
     required String phase,
     required String phaseRange,
     int? exactAge,
     double? latitude,
+    double? longitude,
   }) async {
     final data = <String, dynamic>{
       'phase': phase,
       'phase_range': phaseRange,
       if (exactAge != null) 'exact_age_days': exactAge,
       if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
       'updated_at': DateTime.now().toIso8601String(),
     };
     await _db.ref('plant_config/latest').set(data);

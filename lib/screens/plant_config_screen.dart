@@ -28,8 +28,40 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
   PlantPhase _selectedPhase = PlantPhase.awal;
   final TextEditingController _exactAgeCtrl = TextEditingController();
   double? _latitude;
+  double? _longitude;
   bool _gpsLoading = false;
   String? _gpsError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExistingConfig();
+  }
+
+  Future<void> _loadExistingConfig() async {
+    try {
+      final stream = FirebaseService.instance.plantConfigStream;
+      final map = await stream.first;
+      if (map.isNotEmpty && mounted) {
+        setState(() {
+          if (map['latitude'] != null) {
+            _latitude = (map['latitude'] as num).toDouble();
+          }
+          if (map['longitude'] != null) {
+            _longitude = (map['longitude'] as num).toDouble();
+          }
+          if (map['phase'] != null) {
+            final phaseLabel = map['phase'] as String;
+            final matched = PlantPhase.values.where((p) => p.label == phaseLabel);
+            if (matched.isNotEmpty) _selectedPhase = matched.first;
+          }
+          if (map['exact_age_days'] != null) {
+            _exactAgeCtrl.text = map['exact_age_days'].toString();
+          }
+        });
+      }
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -67,6 +99,7 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
       );
       setState(() {
         _latitude = pos.latitude;
+        _longitude = pos.longitude;
         _gpsLoading = false;
       });
     } catch (e) {
@@ -163,6 +196,7 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
         phaseRange: _selectedPhase.range,
         exactAge: age,
         latitude: _latitude,
+        longitude: _longitude,
       );
 
       if (mounted) {
