@@ -146,4 +146,37 @@ class FirebaseService {
     };
     await _db.ref('plant_config/latest').set(data);
   }
+
+  /// List of scheduled times (e.g., ["08:00", "16:30"]) and its active status.
+  Stream<Map<String, dynamic>> get irrigationScheduleStream {
+    return _db.ref('system_control/schedule').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) {
+        return <String, dynamic>{'is_active': false, 'times': <String>[]};
+      }
+      final map = Map<String, dynamic>.from(raw as Map);
+      final rawTimes = map['times'];
+      List<String> times = [];
+      if (rawTimes is List) {
+        times = rawTimes.map((e) => e.toString()).toList();
+      } else if (rawTimes is Map) {
+        times = List<String>.from(rawTimes.values.map((e) => e.toString()));
+      }
+      
+      times.sort(); // Sort times ascending
+      
+      return {
+        'is_active': (map['is_active'] as bool?) ?? false,
+        'times': times,
+      };
+    });
+  }
+
+  /// Save schedule configuration.
+  Future<void> saveIrrigationSchedule(bool isActive, List<String> times) async {
+    await _db.ref('system_control/schedule').set({
+      'is_active': isActive,
+      'times': times,
+    });
+  }
 }

@@ -50,6 +50,8 @@ class ControlScreen extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 12),
+                      const _ScheduleCard(),
+                      const SizedBox(height: 12),
 
                       // Water usage bar chart
                       Padding(
@@ -119,9 +121,6 @@ class ControlScreen extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Private irrigation mode card — with confirmation dialog on mode switch
-// ---------------------------------------------------------------------------
 
 class _IrrigationModeCard extends StatelessWidget {
   const _IrrigationModeCard({
@@ -261,6 +260,150 @@ class _ModeRow extends StatelessWidget {
         ),
         Switch(value: value, onChanged: onChanged),
       ],
+    );
+  }
+}
+
+class _ScheduleCard extends StatelessWidget {
+  const _ScheduleCard();
+
+  Future<bool> _confirmAction(BuildContext context, String title, String content) async {
+    final cs = Theme.of(context).colorScheme;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.help_outline_rounded, color: cs.primary, size: 26),
+            const SizedBox(width: 10),
+            Text(title),
+          ],
+        ),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _pickTime(BuildContext context, bool currentActive, List<String> currentTimes) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      builder: (BuildContext context, Widget? child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      final hour = picked.hour.toString().padLeft(2, '0');
+      final minute = picked.minute.toString().padLeft(2, '0');
+      final timeStr = '$hour:$minute';
+      
+      if (!currentTimes.contains(timeStr)) {
+        final yes = await _confirmAction(context, 'Simpan Jadwal', 'Apakah Anda yakin ingin menambahkan jadwal penyiraman pada pukul $timeStr?');
+        if (yes) {
+          final newTimes = List<String>.from(currentTimes)..add(timeStr);
+          await FirebaseService.instance.saveIrrigationSchedule(currentActive, newTimes);
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final svc = FirebaseService.instance;
+
+    return StreamBuilder<Map<String, dynamic>>(
+      stream: svc.irrigationScheduleStream,
+      builder: (context, snap) {
+        final data = snap.data ?? {'is_active': false, 'times': <String>[]};
+        final isActive = data['is_active'] as bool;
+        final times = List<String>.from(data['times'] as List);
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Jadwal Otomatis',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                    Switch(
+                      value: isActive,
+                      onChanged: (val) async {
+                        final action = val ? 'mengaktifkan' : 'menonaktifkan';
+                        final yes = await _confirmAction(context, 'Konfirmasi Jadwal', 'Apakah Anda yakin ingin $action jadwal otomatis?');
+                        if (yes) {
+                          await svc.saveIrrigationSchedule(val, times);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                Text(
+                  'Atur jam penyiraman dinamis setiap harinya.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  children: [
+                    ...times.map(
+                      (t) => InputChip(
+                        label: Text(t, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        avatar: const Icon(Icons.access_time, size: 16, color: Colors.blueGrey),
+                        onDeleted: () async {
+                          final yes = await _confirmAction(context, 'Hapus Jadwal', 'Apakah Anda yakin ingin menghapus jadwal jam $t?');
+                          if (yes) {
+                            final newTimes = List<String>.from(times)..remove(t);
+                            await svc.saveIrrigationSchedule(isActive, newTimes);
+                          }
+                        },
+                        deleteIconColor: cs.error,
+                      ),
+                    ),
+                    ActionChip(
+                      label: const Text('Tambah Waktu'),
+                      avatar: const Icon(Icons.add, size: 16),
+                      onPressed: () => _pickTime(context, isActive, times),
+                      backgroundColor: cs.primaryContainer,
+                      side: BorderSide.none,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
