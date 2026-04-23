@@ -37,10 +37,14 @@ class SensorCard extends StatelessWidget {
                   Icon(icon, size: 16, color: cs.primary),
                   const SizedBox(width: 6),
                 ],
-                Text(
-                  label,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: cs.onSurfaceVariant,
+                Expanded(
+                  child: Text(
+                    label,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    softWrap: true,
                   ),
                 ),
               ],
