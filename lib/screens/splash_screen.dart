@@ -75,7 +75,9 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 900),
     )..repeat();
 
-    _runSequence();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _runSequence();
+    });
   }
 
   Future<void> _runSequence() async {

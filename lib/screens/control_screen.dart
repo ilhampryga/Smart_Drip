@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../widgets/water_usage_bar_chart.dart';
 import '../widgets/irrigation_info_card.dart';
 import '../services/firebase_service.dart';
 import '../models/system_control.dart' show SystemControl;
@@ -14,7 +13,7 @@ class ControlScreen extends StatelessWidget {
     final cs = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Kontroll')),
+      appBar: AppBar(title: const Text('Kontrol')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
@@ -45,42 +44,12 @@ class ControlScreen extends StatelessWidget {
                         },
                         onNonEtcChanged: (val) async {
                           if (val) {
-                            await svc.setIrrigationMode('NON_ETC');
+                            await svc.setIrrigationMode('NO_FUZZY_ETC');
                           }
                         },
                       ),
                       const SizedBox(height: 12),
                       const _ScheduleCard(),
-                      const SizedBox(height: 12),
-
-                      // Water usage bar chart
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Grafik Penggunaan Air',
-                                style: theme.textTheme.labelLarge?.copyWith(
-                                  color: cs.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            _legendDot(cs.primary, 'ETc+Fuzzy', theme),
-                            const SizedBox(width: 8),
-                            _legendDot(Colors.blueAccent, 'Non-ETc', theme),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      StreamBuilder<List<Map<String, dynamic>>>(
-                        stream: svc.irrigationHistoryStream,
-                        builder: (ctx, snap) => WaterUsageBarChart(
-                          data: snap.data ?? [],
-                          height: 170,
-                        ),
-                      ),
                       const SizedBox(height: 12),
 
                       IrrigationInfoCard(
@@ -98,29 +67,7 @@ class ControlScreen extends StatelessWidget {
       ),
     );
   }
-
-  Widget _legendDot(Color color, String label, ThemeData theme) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: Colors.grey.shade600,
-            fontSize: 10,
-          ),
-        ),
-      ],
-    );
-  }
 }
-
 
 class _IrrigationModeCard extends StatelessWidget {
   const _IrrigationModeCard({
@@ -136,7 +83,6 @@ class _IrrigationModeCard extends StatelessWidget {
   final ValueChanged<bool> onNonEtcChanged;
 
   Future<bool> _confirmModeChange(BuildContext context, String modeName) async {
-    final cs = Theme.of(context).colorScheme;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -145,7 +91,11 @@ class _IrrigationModeCard extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.swap_horiz_rounded, color: cs.primary, size: 26),
+            Icon(
+              Icons.swap_horiz_rounded,
+              color: Theme.of(context).colorScheme.primary,
+              size: 26,
+            ),
             const SizedBox(width: 10),
             const Text('Ganti Mode'),
           ],
@@ -188,25 +138,25 @@ class _IrrigationModeCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _ModeRow(
-              title: 'ETc + Fuzzy Logic Mode',
+              title: 'ETc + Fuzzy',
               subtitle: 'Irigasi berdasar ETc & Fuzzy Logic',
               value: etcFuzzyEnabled,
               onChanged: (val) async {
                 if (!val) return; // only allow turning ON (exclusive mode)
                 final yes = await _confirmModeChange(
-                    context, 'ETc + Fuzzy Logic');
+                    context, 'ETc + Fuzzy');
                 if (yes) onEtcFuzzyChanged(val);
               },
             ),
             Divider(color: cs.outlineVariant, height: 24),
             _ModeRow(
-              title: 'Non ETc Mode',
-              subtitle: 'Irigasi tanpa kalkulasi ETc',
+              title: 'No Fuzzy dan ETc',
+              subtitle: 'Irigasi tanpa Fuzzy dan ETc',
               value: nonEtcEnabled,
               onChanged: (val) async {
-                if (!val) return; // only allow turning ON (exclusive mode)
+                if (!val) return;
                 final yes =
-                    await _confirmModeChange(context, 'Non ETc');
+                    await _confirmModeChange(context, 'No Fuzzy dan ETc');
                 if (yes) onNonEtcChanged(val);
               },
             ),
@@ -407,3 +357,4 @@ class _ScheduleCard extends StatelessWidget {
     );
   }
 }
+// ignore_for_file: use_build_context_synchronously

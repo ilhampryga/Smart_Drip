@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'firebase_options.dart';
-import 'screens/main_screen.dart';
 import 'screens/splash_screen.dart';
 
 void main() async {
@@ -39,7 +38,8 @@ class MyApp extends StatelessWidget {
           elevation: 0,
           scrolledUnderElevation: 1,
           titleTextStyle: textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
+            fontSize: 26.0,
             color: colorScheme.onSurface,
           ),
           iconTheme: IconThemeData(color: colorScheme.onSurface),

@@ -1,8 +1,6 @@
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,3 +215,4 @@ class BmkgService {
     return '–';
   }
 }
+// ignore_for_file: unused_import, unused_element, unused_field, prefer_interpolation_to_compose_strings

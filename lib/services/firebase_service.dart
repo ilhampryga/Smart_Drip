@@ -34,7 +34,7 @@ class FirebaseService {
       if (raw == null) {
         return const SystemControl(
           mode: 'ETC_FUZZY',
-          pumpStatus: 'OFF',
+          pumpStatus: false,
           flowRateMlPerSec: 20,
         );
       }
@@ -109,9 +109,9 @@ class FirebaseService {
     });
   }
 
-  /// Set pump status to ON or OFF.
+  /// Set pump status to true (ON) or false (OFF).
   Future<void> setPumpStatus(bool isOn) async {
-    await _db.ref('system_control/pump_status').set(isOn ? 'ON' : 'OFF');
+    await _db.ref('system_control/pump_status').set(isOn);
   }
 
   /// Set irrigation mode: "ETC_FUZZY" or "NON_ETC".
