@@ -8,6 +8,23 @@ class FirebaseService {
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
 
+  /// Recursively converts a Firebase map (Map<Object?, Object?>) to
+  /// Map<String, dynamic> so Dart type casts work on all platforms.
+  /// Android Firebase SDK returns nested maps as Map<Object?, Object?>,
+  /// while web returns them as Map<String, dynamic>. This normalises both.
+  static Map<String, dynamic> _deepConvert(Map<dynamic, dynamic> raw) {
+    return Map<String, dynamic>.fromEntries(
+      raw.entries.map((e) {
+        final key = e.key?.toString() ?? '';
+        final val = e.value;
+        if (val is Map) {
+          return MapEntry(key, _deepConvert(val as Map<dynamic, dynamic>));
+        }
+        return MapEntry(key, val);
+      }),
+    );
+  }
+
   /// Latest sensor reading (temperature + soil moisture).
   Stream<SensorData> get sensorDataStream {
     return _db.ref('sensor_data/latest').onValue.map((event) {
@@ -54,38 +71,149 @@ class FirebaseService {
   }
 
 
-  /// All sensor history records sorted by timestamp ascending.
+  /// All sensor history records across all dates, sorted by timestamp ascending.
+  /// Structure: sensor_data/history/{YYYY-MM-DD}/{key} → {soil_moisture, temperature, timestamp}
   Stream<List<SensorData>> get sensorHistoryStream {
     return _db.ref('sensor_data/history').onValue.map((event) {
       final raw = event.snapshot.value;
-      if (raw == null) {
-        return <SensorData>[];
+      if (raw == null) return <SensorData>[];
+      final dateMap = _deepConvert(raw as Map<dynamic, dynamic>);
+      final list = <SensorData>[];
+      for (final dateEntry in dateMap.values) {
+        if (dateEntry is! Map) continue;
+        final records = _deepConvert(dateEntry as Map<dynamic, dynamic>);
+        for (final v in records.values) {
+          if (v is Map) {
+            list.add(SensorData.fromMap(_deepConvert(v as Map<dynamic, dynamic>)));
+          }
+        }
       }
-      final map = Map<String, dynamic>.from(raw as Map);
-      final list =
-          map.values
-              .map((v) => SensorData.fromMap(v as Map<dynamic, dynamic>))
-              .toList()
-            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
       return list;
     });
   }
 
-  /// All irrigation log history records sorted by start_time ascending.
+  /// Sensor history for TODAY only — reads directly from
+  /// sensor_data/history/{YYYY-MM-DD} for efficiency (no full-scan needed).
+  Stream<List<SensorData>> get sensorTodayStream {
+    final todayStr = _todayDateString();
+    return _db.ref('sensor_data/history/$todayStr').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <SensorData>[];
+      final map = _deepConvert(raw as Map<dynamic, dynamic>);
+      final list = <SensorData>[];
+      for (final v in map.values) {
+        if (v is Map) {
+          list.add(SensorData.fromMap(_deepConvert(v as Map<dynamic, dynamic>)));
+        }
+      }
+      list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      return list;
+    });
+  }
+
+  /// Irrigation history for TODAY only — reads directly from
+  /// irrigation_log/history/{YYYY-MM-DD} (nested structure, same as sensor).
+  Stream<List<Map<String, dynamic>>> get irrigationTodayStream {
+    final todayStr = _todayDateString();
+    return _db.ref('irrigation_log/history/$todayStr').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <Map<String, dynamic>>[];
+      final map = _deepConvert(raw as Map<dynamic, dynamic>);
+      final list = <Map<String, dynamic>>[];
+      for (final v in map.values) {
+        if (v is Map<String, dynamic>) list.add(v);
+      }
+      list.sort((a, b) =>
+          (a['start_time'] as String).compareTo(b['start_time'] as String));
+      return list;
+    });
+  }
+
+  /// Returns true if [ts] (any ISO-8601 variant) falls on [dateStr] ("YYYY-MM-DD").
+  bool _timestampMatchesDate(String ts, String dateStr) {
+    if (ts.isEmpty) return false;
+    // Timestamps may be "YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD HH:mm:ss" or just the date
+    return ts.startsWith(dateStr);
+  }
+
+  /// Returns today's date as "YYYY-MM-DD" string.
+  String _todayDateString() {
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Archives sensor and irrigation data for [dateStr] ("YYYY-MM-DD") to
+  /// daily_log paths in Firebase. Safe to call multiple times.
+  ///
+  /// Both sensor and irrigation data now use the same nested structure:
+  /// history/{dateStr}/{key}, so archiving just copies the subtree.
+  Future<void> archiveDailyData(String dateStr) async {
+    // --- Sensor archive (nested structure) ---
+    final sensorSnap = await _db.ref('sensor_data/history/$dateStr').get();
+    if (sensorSnap.value != null) {
+      await _db.ref('sensor_data/daily_log/$dateStr').set(sensorSnap.value);
+    }
+
+    // --- Irrigation archive (now also nested by date) ---
+    final irrigSnap = await _db.ref('irrigation_log/history/$dateStr').get();
+    if (irrigSnap.value != null) {
+      await _db.ref('irrigation_log/daily_log/$dateStr').set(irrigSnap.value);
+    }
+  }
+
+  /// Stream of sensor data for a specific date — reads from
+  /// sensor_data/history/{dateStr} (new nested structure).
+  Stream<List<SensorData>> sensorDailyLogStream(String dateStr) {
+    return _db.ref('sensor_data/history/$dateStr').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <SensorData>[];
+      final map = Map<String, dynamic>.from(raw as Map);
+      return map.values
+          .where((v) => v is Map)
+          .map((v) => SensorData.fromMap(v as Map<dynamic, dynamic>))
+          .toList()
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    });
+  }
+
+  /// Stream of irrigation data for a specific date — reads from
+  /// irrigation_log/history/{dateStr} (new nested structure).
+  Stream<List<Map<String, dynamic>>> irrigationDailyLogStream(String dateStr) {
+    return _db.ref('irrigation_log/history/$dateStr').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <Map<String, dynamic>>[];
+      final map = _deepConvert(raw as Map<dynamic, dynamic>);
+      final list = map.values
+          .whereType<Map<String, dynamic>>()
+          .toList()
+        ..sort((a, b) =>
+            (a['start_time'] as String).compareTo(b['start_time'] as String));
+      return list;
+    });
+  }
+
+  /// All irrigation log history records across all dates, sorted by start_time ascending.
+  /// Structure: irrigation_log/history/{YYYY-MM-DD}/{key} → {duration, mode, start_time, ...}
   Stream<List<Map<String, dynamic>>> get irrigationHistoryStream {
     return _db.ref('irrigation_log/history').onValue.map((event) {
       final raw = event.snapshot.value;
-      if (raw == null) {
-        return <Map<String, dynamic>>[];
+      if (raw == null) return <Map<String, dynamic>>[];
+      final dateMap = _deepConvert(raw as Map<dynamic, dynamic>);
+      final list = <Map<String, dynamic>>[];
+      for (final dateEntry in dateMap.values) {
+        if (dateEntry is! Map) continue;
+        final records = dateEntry is Map<String, dynamic>
+            ? dateEntry
+            : _deepConvert(dateEntry as Map<dynamic, dynamic>);
+        for (final v in records.values) {
+          if (v is Map<String, dynamic>) list.add(v);
+        }
       }
-      final map = Map<String, dynamic>.from(raw as Map);
-      final list =
-          map.values.map((v) => Map<String, dynamic>.from(v as Map)).toList()
-            ..sort(
-              (a, b) => (a['start_time'] as String).compareTo(
-                b['start_time'] as String,
-              ),
-            );
+      list.sort((a, b) =>
+          (a['start_time'] as String).compareTo(b['start_time'] as String));
       return list;
     });
   }

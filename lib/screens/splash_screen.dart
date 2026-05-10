@@ -24,6 +24,9 @@ class _SplashScreenState extends State<SplashScreen>
   // ── Dot loader ──────────────────────────────────────────────────────────
   late final AnimationController _dotController;
 
+  bool _imageLoaded = false;
+  bool _sequenceStarted = false;
+
   @override
   void initState() {
     super.initState();
@@ -41,14 +44,15 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 900),
     );
 
-    _logoScale = Tween<double>(begin: 0.4, end: 1.0).animate(
+    // Mulai dari 0.6 bukan 0.0 agar tidak tampak blank di Android
+    _logoScale = Tween<double>(begin: 0.6, end: 1.0).animate(
       CurvedAnimation(parent: _logoController, curve: Curves.elasticOut),
     );
 
     _logoOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _logoController,
-        curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
+        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
       ),
     );
 
@@ -59,7 +63,7 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _textSlide = Tween<Offset>(
-      begin: const Offset(0, 0.5),
+      begin: const Offset(0, 0.4),
       end: Offset.zero,
     ).animate(
       CurvedAnimation(parent: _textController, curve: Curves.easeOutCubic),
@@ -74,17 +78,40 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat();
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _runSequence();
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Pre-cache image sebelum animasi mulai (penting untuk Android)
+    if (!_sequenceStarted) {
+      _sequenceStarted = true;
+      _precacheAndRun();
+    }
+  }
+
+  Future<void> _precacheAndRun() async {
+    // Coba pre-cache image asset, tapi tetap lanjut meski gagal
+    try {
+      await precacheImage(
+        const AssetImage('assets/logo_smart_drip.png'),
+        context,
+      );
+      if (mounted) setState(() => _imageLoaded = true);
+    } catch (_) {
+      // Jika gambar gagal di-cache, tetap jalankan animasi
+      if (mounted) setState(() => _imageLoaded = true);
+    }
+
+    if (!mounted) return;
+    await _runSequence();
   }
 
   Future<void> _runSequence() async {
     await _logoController.forward();
     await Future<void>.delayed(const Duration(milliseconds: 100));
     await _textController.forward();
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -113,7 +140,7 @@ class _SplashScreenState extends State<SplashScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // ── Logo dari asset ───────────────────────────────────────────
+            // ── Logo ──────────────────────────────────────────────────────
             AnimatedBuilder(
               animation: _logoController,
               builder: (_, child) => Opacity(
@@ -123,27 +150,52 @@ class _SplashScreenState extends State<SplashScreen>
                   child: child,
                 ),
               ),
-              child: Image.asset(
-                'assets/logo_smart_drip.png',
-                width: 180,
-                height: 180,
-                fit: BoxFit.contain,
-              ),
+              child: _imageLoaded
+                  ? Image.asset(
+                      'assets/logo_smart_drip.png',
+                      width: 180,
+                      height: 180,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => _FallbackLogo(),
+                    )
+                  : _FallbackLogo(),
             ),
 
             const SizedBox(height: 48),
 
             // ── Dot loader ────────────────────────────────────────────────
-            AnimatedBuilder(
-              animation: _textController,
-              builder: (_, child) => FadeTransition(
-                opacity: _textOpacity,
-                child: SlideTransition(position: _textSlide, child: child),
+            ClipRect(
+              child: AnimatedBuilder(
+                animation: _textController,
+                builder: (_, child) => FadeTransition(
+                  opacity: _textOpacity,
+                  child: SlideTransition(position: _textSlide, child: child),
+                ),
+                child: _DotLoader(controller: _dotController),
               ),
-              child: _DotLoader(controller: _dotController),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Fallback logo jika asset gagal load ───────────────────────────────────────
+class _FallbackLogo extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 180,
+      height: 180,
+      decoration: BoxDecoration(
+        color: const Color(0xFF2ECC71).withValues(alpha: 0.15),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.water_drop_rounded,
+        size: 80,
+        color: Color(0xFF2ECC71),
       ),
     );
   }
@@ -162,10 +214,12 @@ class _DotLoader extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: List.generate(3, (i) {
         final delay = i / 3;
+        // Clamp end ke 1.0 agar tidak melebihi batas Interval (assert end <= 1.0)
+        final intervalEnd = (delay + 0.4).clamp(0.0, 1.0);
         final anim = Tween<double>(begin: 0.3, end: 1.0).animate(
           CurvedAnimation(
             parent: controller,
-            curve: Interval(delay, delay + 0.4, curve: Curves.easeInOut),
+            curve: Interval(delay, intervalEnd, curve: Curves.easeInOut),
           ),
         );
         return AnimatedBuilder(

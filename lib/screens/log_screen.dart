@@ -18,6 +18,12 @@ class _LogScreenState extends State<LogScreen> {
 
   final _svc = FirebaseService.instance;
 
+  /// Returns "YYYY-MM-DD" string from a DateTime.
+  String _dateStr(DateTime dt) =>
+      '${dt.year.toString().padLeft(4, '0')}-'
+      '${dt.month.toString().padLeft(2, '0')}-'
+      '${dt.day.toString().padLeft(2, '0')}';
+
   /// Filter sensor history by selected date range.
   List<SensorData> _filterSensor(List<SensorData> all) {
     if (_startDate == null && _endDate == null) return all;
@@ -38,7 +44,8 @@ class _LogScreenState extends State<LogScreen> {
   }
 
   /// Filter irrigation history by selected date range.
-  List<Map<String, dynamic>> _filterIrrigation(List<Map<String, dynamic>> all) {
+  List<Map<String, dynamic>> _filterIrrigation(
+      List<Map<String, dynamic>> all) {
     if (_startDate == null && _endDate == null) return all;
     return all.where((d) {
       final t = (d['start_time'] as String?) ?? '';
@@ -55,6 +62,20 @@ class _LogScreenState extends State<LogScreen> {
         return true;
       }
     }).toList();
+  }
+
+  /// Whether the current filter covers exactly one day.
+  bool get _isSingleDay =>
+      _startDate != null &&
+      _endDate != null &&
+      _dateStr(_startDate!) == _dateStr(_endDate!);
+
+  /// Whether the current filter covers today only.
+  bool get _isToday {
+    final today = _dateStr(DateTime.now());
+    if (_startDate == null && _endDate == null) return false;
+    if (_isSingleDay) return _dateStr(_startDate!) == today;
+    return false;
   }
 
   @override
@@ -77,12 +98,16 @@ class _LogScreenState extends State<LogScreen> {
                 final sensors = _filterSensor(allSensors);
                 final irrigation = _filterIrrigation(allIrrigation);
 
+                // Determine if we should use 24h mode for charts
+                // (only when viewing a single specific day)
+                final use24h = _isSingleDay;
+
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Date range pickers
+                      // ── Date range pickers ──
                       Row(
                         children: [
                           DatePickerField(
@@ -105,9 +130,54 @@ class _LogScreenState extends State<LogScreen> {
                           ),
                         ],
                       ),
+
+                      // ── Reset filter button ──
+                      if (_startDate != null || _endDate != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: () => setState(() {
+                                _startDate = null;
+                                _endDate = null;
+                              }),
+                              icon: const Icon(Icons.clear, size: 16),
+                              label: const Text('Reset Filter'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: cs.error,
+                                textStyle:
+                                    const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            const Spacer(),
+                            if (sensors.isNotEmpty || irrigation.isNotEmpty)
+                              Text(
+                                '${sensors.length} data sensor  •  '
+                                '${irrigation.length} irigasi',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 16),
 
-                      // Water usage bar chart
+                      // ── Info chip if viewing single day ──
+                      if (use24h) ...[
+                        _InfoChip(
+                          icon: Icons.info_outline,
+                          text: _isToday
+                              ? 'Menampilkan data hari ini (mode 24 jam)'
+                              : 'Menampilkan data 24 jam pada '
+                                  '${_dateStr(_startDate!)}',
+                          color: cs.primaryContainer,
+                          textColor: cs.onPrimaryContainer,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // ── Water usage bar chart ──
                       _chartTitle(context, 'Grafik Penggunaan Air', [
                         _dot(cs.primary, 'Volume (ml)', theme),
                       ]),
@@ -115,7 +185,7 @@ class _LogScreenState extends State<LogScreen> {
                       WaterUsageBarChart(data: irrigation, height: 160),
                       const SizedBox(height: 16),
 
-                      // Temperature line chart
+                      // ── Temperature line chart ──
                       _chartTitle(context, 'Grafik Suhu', [
                         _dot(cs.primary, 'Suhu (°C)', theme),
                       ]),
@@ -125,10 +195,11 @@ class _LogScreenState extends State<LogScreen> {
                         height: 160,
                         showBothLines: false,
                         showTemperature: true,
+                        is24HourMode: use24h,
                       ),
                       const SizedBox(height: 16),
 
-                      // Soil moisture line chart
+                      // ── Soil moisture line chart ──
                       _chartTitle(context, 'Grafik Kelembapan Tanah', [
                         const _LegendDot(
                           color: Colors.blueAccent,
@@ -141,6 +212,7 @@ class _LogScreenState extends State<LogScreen> {
                         height: 160,
                         showBothLines: false,
                         showTemperature: false,
+                        is24HourMode: use24h,
                       ),
                       const SizedBox(height: 8),
                     ],
@@ -154,7 +226,8 @@ class _LogScreenState extends State<LogScreen> {
     );
   }
 
-  Widget _chartTitle(BuildContext context, String title, List<Widget> legend) {
+  Widget _chartTitle(
+      BuildContext context, String title, List<Widget> legend) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return Row(
@@ -175,6 +248,49 @@ class _LogScreenState extends State<LogScreen> {
 
   Widget _dot(Color color, String label, ThemeData theme) =>
       _LegendDot(color: color, label: label);
+}
+
+// ──────────────────────────────────────────────
+// Widgets
+// ──────────────────────────────────────────────
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({
+    required this.icon,
+    required this.text,
+    required this.color,
+    required this.textColor,
+  });
+  final IconData icon;
+  final String text;
+  final Color color;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: textColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                  color: textColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _LegendDot extends StatelessWidget {

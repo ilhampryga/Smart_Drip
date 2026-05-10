@@ -16,7 +16,9 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  static const List<Widget> _pages = [
+  // NOT const — StatefulWidget children need their own State lifecycle.
+  // const/static would prevent late final fields in initState from working.
+  final List<Widget> _pages = const [
     DashboardScreen(),
     ControlScreen(),
     LogScreen(),

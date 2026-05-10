@@ -5,6 +5,7 @@ import '../widgets/sensor_line_chart.dart';
 import '../widgets/water_usage_bar_chart.dart';
 import '../widgets/weather_card.dart';
 import '../services/firebase_service.dart';
+import '../services/daily_archive_service.dart';
 import '../models/sensor_data.dart' show SensorData;
 import '../models/system_control.dart' show SystemControl;
 
@@ -17,6 +18,51 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final _svc = FirebaseService.instance;
+
+  // Cached streams — must be stable object references for StreamBuilder.
+  // Creating them inside build() causes re-subscription on every parent rebuild.
+  late final Stream<List<SensorData>> _sensorTodayStream;
+  late final Stream<List<Map<String, dynamic>>> _irrigationTodayStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _sensorTodayStream = _svc.sensorTodayStream;
+    _irrigationTodayStream = _svc.irrigationTodayStream;
+    // Trigger daily archive check on dashboard open
+    DailyArchiveService.instance.checkAndArchive();
+  }
+
+  /// Returns formatted date string: e.g. "Sabtu, 2 Mei 2026"
+  String _formattedToday() {
+    final now = DateTime.now();
+    const days = [
+      'Senin',
+      'Selasa',
+      'Rabu',
+      'Kamis',
+      'Jumat',
+      'Sabtu',
+      'Minggu',
+    ];
+    const months = [
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember',
+    ];
+    final dayName = days[now.weekday - 1];
+    final monthName = months[now.month - 1];
+    return '$dayName, ${now.day} $monthName ${now.year}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +95,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final moistStr = sensor != null
                           ? sensor.soilMoisture.toStringAsFixed(1)
                           : '--';
-                      final etcStr = etc > 0 ? etc.toStringAsFixed(1) : '--';
+                      final etcStr =
+                          etc > 0 ? etc.toStringAsFixed(1) : '--';
 
                       return Column(
                         children: [
@@ -94,10 +141,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           StreamBuilder<Map<String, dynamic>>(
                             stream: _svc.plantConfigStream,
                             builder: (ctx, plantSnap) {
-                              final lat = (plantSnap.data?['latitude'] as num?)
-                                  ?.toDouble();
-                              final lon = (plantSnap.data?['longitude'] as num?)
-                                  ?.toDouble();
+                              final lat =
+                                  (plantSnap.data?['latitude'] as num?)
+                                      ?.toDouble();
+                              final lon =
+                                  (plantSnap.data?['longitude'] as num?)
+                                      ?.toDouble();
                               return WeatherCard(
                                 latitude: lat,
                                 longitude: lon,
@@ -106,9 +155,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          // ── Sensor history chart ──
+                          // ── Date badge ──
+                          _DateBadge(label: _formattedToday()),
+                          const SizedBox(height: 10),
+
+                          // ── Sensor history chart — today only ──
                           _ChartCard(
                             title: 'Grafik Suhu & Kelembapan Tanah',
+                            subtitle: 'Data hari ini (00:00–23:59)',
                             legend: [
                               _LegendItem(
                                 color: cs.primary,
@@ -120,19 +174,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                             ],
                             child: StreamBuilder<List<SensorData>>(
-                              stream: _svc.sensorHistoryStream,
+                              stream: _sensorTodayStream,
                               builder: (ctx, snap) => SensorLineChart(
                                 data: snap.data ?? [],
-                                height: 160,
+                                height: 180,
                                 showBothLines: true,
+                                is24HourMode: true,
                               ),
                             ),
                           ),
                           const SizedBox(height: 12),
 
-                          // ── Water usage chart ──
+                          // ── Water usage chart — today only ──
                           _ChartCard(
                             title: 'Grafik Penggunaan Air',
+                            subtitle: 'Irigasi hari ini',
                             legend: [
                               _LegendItem(
                                 color: cs.primary,
@@ -140,10 +196,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                             ],
                             child: StreamBuilder<List<Map<String, dynamic>>>(
-                              stream: _svc.irrigationHistoryStream,
+                              stream: _irrigationTodayStream,
                               builder: (ctx, snap) => WaterUsageBarChart(
                                 data: snap.data ?? [],
-                                height: 160,
+                                height: 180,
                               ),
                             ),
                           ),
@@ -163,6 +219,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // ──────────────────────────────────────────────
+// Date badge widget
+// ──────────────────────────────────────────────
+
+class _DateBadge extends StatelessWidget {
+  const _DateBadge({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: cs.primaryContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.calendar_today_outlined,
+              size: 14, color: cs.primary),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: cs.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
 // Reusable chart card wrapper with title + legend
 // ──────────────────────────────────────────────
 
@@ -170,10 +263,12 @@ class _ChartCard extends StatelessWidget {
   const _ChartCard({
     required this.title,
     required this.child,
+    this.subtitle,
     this.legend = const [],
   });
 
   final String title;
+  final String? subtitle;
   final Widget child;
   final List<_LegendItem> legend;
 
@@ -189,12 +284,24 @@ class _ChartCard extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: cs.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (subtitle != null)
+                      Text(
+                        subtitle!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               ...legend,
@@ -239,4 +346,3 @@ class _LegendItem extends StatelessWidget {
     );
   }
 }
-

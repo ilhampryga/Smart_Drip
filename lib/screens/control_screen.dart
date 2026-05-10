@@ -9,9 +9,6 @@ class ControlScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final svc = FirebaseService.instance;
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Kontrol')),
       body: SafeArea(

@@ -31,6 +31,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Fix: skip x86/x86_64 ABI to avoid ninja.exe 3.22.1 crash (0xc0000142) on Windows.
+        // Physical Android devices use ARM only; x86 is emulator-only.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {

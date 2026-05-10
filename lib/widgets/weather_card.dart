@@ -383,31 +383,64 @@ class _HourlyTile extends StatelessWidget {
     }
   }
 
+  /// Maps WMO weather interpretation code → emoji icon.
+  /// Reference: https://open-meteo.com/en/docs (WMO Weather interpretation codes)
   String _weatherEmoji(int code) {
     switch (code) {
-      case 0: return '☀️'; // Cerah
-      case 1: 
-      case 2: return '🌤️'; // Cerah berawan
-      case 3: return '☁️'; // Berawan
+      // Clear sky
+      case 0:  return '☀️';   // Cerah
+
+      // Mostly / Partly clear → Partly cloudy
+      case 1:  return '🌤️';  // Sebagian cerah
+      case 2:  return '⛅';   // Cerah berawan
+
+      // Overcast
+      case 3:  return '☁️';   // Mendung / berawan penuh
+
+      // Fog
       case 45:
-      case 48: return '🌫️'; // Kabut
+      case 48: return '🌫️';  // Berkabut
+
+      // Drizzle (light → dense)
       case 51:
       case 53:
-      case 55: return '🌦️'; // Gerimis
-      case 61: return '🌧️'; // Hujan ringan
-      case 63: return '🌧️'; // Hujan sedang
-      case 65: return '⛈️'; // Hujan lebat
-      case 95:
+      case 55: return '🌦️';  // Gerimis
+
+      // Freezing drizzle (treat same as drizzle in tropical context)
+      case 56:
+      case 57: return '🌦️';  // Gerimis beku
+
+      // Rain: slight / moderate / heavy
+      case 61: return '🌧️';  // Hujan ringan
+      case 63: return '🌧️';  // Hujan sedang
+      case 65: return '🌧️';  // Hujan lebat
+
+      // Freezing rain
+      case 66:
+      case 67: return '🌧️';  // Hujan dingin
+
+      // Rain showers: slight / moderate / heavy
+      case 80: return '🌦️';  // Hujan lokal ringan
+      case 81: return '🌧️';  // Hujan lokal sedang
+      case 82: return '🌧️';  // Hujan lokal lebat
+
+      // Snow / sleet (rare in Indonesia, show cloud)
+      case 71:
+      case 73:
+      case 75:
+      case 77:
+      case 85:
+      case 86: return '🌨️';  // Salju / es
+
+      // Thunderstorm: slight / moderate / with heavy hail
+      case 95: return '⛈️';   // Badai petir
       case 96:
-      case 99: return '⛈️'; // Badai
-      default: return '🌤️';
+      case 99: return '⛈️';   // Badai petir + hujan es
+
+      default: return '🌤️';  // Fallback
     }
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-widgets
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Gradient banner used as card header for Loading and Error states.
 class _GradientHeader extends StatelessWidget {
