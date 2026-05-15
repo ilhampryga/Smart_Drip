@@ -37,6 +37,13 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+
+        // Fix: Force CMake 3.18.1 — CMake 3.22.1 ninja.exe crashes on Windows (exit 0xc0000142).
+        externalNativeBuild {
+            cmake {
+                version = "3.18.1"
+            }
+        }
     }
 
     buildTypes {

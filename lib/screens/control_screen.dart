@@ -46,7 +46,7 @@ class ControlScreen extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 12),
-                      const _ScheduleCard(),
+                      _ScheduleCard(isNoEtcFuzzy: ctrl != null && !ctrl.isEtcFuzzy),
                       const SizedBox(height: 12),
 
                       IrrigationInfoCard(
@@ -211,10 +211,22 @@ class _ModeRow extends StatelessWidget {
   }
 }
 
-class _ScheduleCard extends StatelessWidget {
-  const _ScheduleCard();
+class _ScheduleCard extends StatefulWidget {
+  const _ScheduleCard({required this.isNoEtcFuzzy});
 
-  Future<bool> _confirmAction(BuildContext context, String title, String content) async {
+  /// True saat mode aktif adalah NO_FUZZY_ETC.
+  /// Jika true, jadwal otomatis di-disable dan UI di-gray-out.
+  final bool isNoEtcFuzzy;
+
+  @override
+  State<_ScheduleCard> createState() => _ScheduleCardState();
+}
+
+class _ScheduleCardState extends State<_ScheduleCard> {
+  bool _disabling = false; // guard agar tidak loop
+
+  Future<bool> _confirmAction(
+      BuildContext context, String title, String content) async {
     final cs = Theme.of(context).colorScheme;
 
     final confirmed = await showDialog<bool>(
@@ -245,7 +257,8 @@ class _ScheduleCard extends StatelessWidget {
     return confirmed ?? false;
   }
 
-  Future<void> _pickTime(BuildContext context, bool currentActive, List<String> currentTimes) async {
+  Future<void> _pickTime(
+      BuildContext context, bool currentActive, List<String> currentTimes) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
@@ -256,18 +269,30 @@ class _ScheduleCard extends StatelessWidget {
         );
       },
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       final hour = picked.hour.toString().padLeft(2, '0');
       final minute = picked.minute.toString().padLeft(2, '0');
       final timeStr = '$hour:$minute';
-      
+
       if (!currentTimes.contains(timeStr)) {
-        final yes = await _confirmAction(context, 'Simpan Jadwal', 'Apakah Anda yakin ingin menambahkan jadwal penyiraman pada pukul $timeStr?');
+        final yes = await _confirmAction(context, 'Simpan Jadwal',
+            'Apakah Anda yakin ingin menambahkan jadwal penyiraman pada pukul $timeStr?');
         if (yes) {
           final newTimes = List<String>.from(currentTimes)..add(timeStr);
-          await FirebaseService.instance.saveIrrigationSchedule(currentActive, newTimes);
+          await FirebaseService.instance
+              .saveIrrigationSchedule(currentActive, newTimes);
         }
       }
+    }
+  }
+
+  /// Jika mode NO_FUZZY_ETC aktif dan jadwal masih ON → paksa OFF ke Firebase.
+  Future<void> _autoDisableIfNeeded(
+      bool isActive, List<String> times) async {
+    if (widget.isNoEtcFuzzy && isActive && !_disabling) {
+      _disabling = true;
+      await FirebaseService.instance.saveIrrigationSchedule(false, times);
+      _disabling = false;
     }
   }
 
@@ -280,73 +305,139 @@ class _ScheduleCard extends StatelessWidget {
     return StreamBuilder<Map<String, dynamic>>(
       stream: svc.irrigationScheduleStream,
       builder: (context, snap) {
-        final data = snap.data ?? {'is_active': false, 'times': <String>[]};
-        final isActive = data['is_active'] as bool;
+        final data =
+            snap.data ?? {'is_active': false, 'times': <String>[]};
+
+        // Jika mode NO_FUZZY_ETC, paksa is_active = false
+        final rawIsActive = data['is_active'] as bool;
         final times = List<String>.from(data['times'] as List);
 
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Jadwal Otomatis',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: cs.onSurface,
+        // Auto-disable ke Firebase jika perlu (fire-and-forget, hanya sekali)
+        _autoDisableIfNeeded(rawIsActive, times);
+
+        // Nilai tampilan: selalu false saat NO_FUZZY_ETC
+        final isActive = widget.isNoEtcFuzzy ? false : rawIsActive;
+        final isLocked = widget.isNoEtcFuzzy;
+
+        return Opacity(
+          opacity: isLocked ? 0.45 : 1.0,
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Jadwal Otomatis',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface,
+                        ),
                       ),
-                    ),
-                    Switch(
-                      value: isActive,
-                      onChanged: (val) async {
-                        final action = val ? 'mengaktifkan' : 'menonaktifkan';
-                        final yes = await _confirmAction(context, 'Konfirmasi Jadwal', 'Apakah Anda yakin ingin $action jadwal otomatis?');
-                        if (yes) {
-                          await svc.saveIrrigationSchedule(val, times);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                Text(
-                  'Atur jam penyiraman dinamis setiap harinya.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
+                      Switch(
+                        value: isActive,
+                        // null = disabled (tidak bisa disentuh)
+                        onChanged: isLocked
+                            ? null
+                            : (val) async {
+                                final action =
+                                    val ? 'mengaktifkan' : 'menonaktifkan';
+                                final yes = await _confirmAction(
+                                    context,
+                                    'Konfirmasi Jadwal',
+                                    'Apakah Anda yakin ingin $action jadwal otomatis?');
+                                if (yes) {
+                                  await svc.saveIrrigationSchedule(
+                                      val, times);
+                                }
+                              },
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8.0,
-                  runSpacing: 8.0,
-                  children: [
-                    ...times.map(
-                      (t) => InputChip(
-                        label: Text(t, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        avatar: const Icon(Icons.access_time, size: 16, color: Colors.blueGrey),
-                        onDeleted: () async {
-                          final yes = await _confirmAction(context, 'Hapus Jadwal', 'Apakah Anda yakin ingin menghapus jadwal jam $t?');
-                          if (yes) {
-                            final newTimes = List<String>.from(times)..remove(t);
-                            await svc.saveIrrigationSchedule(isActive, newTimes);
-                          }
-                        },
-                        deleteIconColor: cs.error,
+
+                  // Banner peringatan saat mode NO_FUZZY_ETC aktif
+                  if (isLocked) ...
+                    [
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: cs.errorContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.lock_outline_rounded,
+                                size: 14, color: cs.onErrorContainer),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Jadwal dinonaktifkan karena mode "No Fuzzy & ETc" aktif.',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                    color: cs.onErrorContainer),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                    ],
+
+                  const SizedBox(height: 8),
+                  Text(
+                    'Atur jam penyiraman dinamis setiap harinya.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
                     ),
-                    ActionChip(
-                      label: const Text('Tambah Waktu'),
-                      avatar: const Icon(Icons.add, size: 16),
-                      onPressed: () => _pickTime(context, isActive, times),
-                      backgroundColor: cs.primaryContainer,
-                      side: BorderSide.none,
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8.0,
+                    runSpacing: 8.0,
+                    children: [
+                      ...times.map(
+                        (t) => InputChip(
+                          label: Text(t,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600)),
+                          avatar: const Icon(Icons.access_time,
+                              size: 16, color: Colors.blueGrey),
+                          onDeleted: isLocked
+                              ? null
+                              : () async {
+                                  final yes = await _confirmAction(
+                                      context,
+                                      'Hapus Jadwal',
+                                      'Apakah Anda yakin ingin menghapus jadwal jam $t?');
+                                  if (yes) {
+                                    final newTimes =
+                                        List<String>.from(times)..remove(t);
+                                    await svc.saveIrrigationSchedule(
+                                        isActive, newTimes);
+                                  }
+                                },
+                          deleteIconColor: cs.error,
+                        ),
+                      ),
+                      ActionChip(
+                        label: const Text('Tambah Waktu'),
+                        avatar: const Icon(Icons.add, size: 16),
+                        onPressed: isLocked
+                            ? null
+                            : () => _pickTime(context, isActive, times),
+                        backgroundColor: isLocked
+                            ? cs.surfaceContainerHighest
+                            : cs.primaryContainer,
+                        side: BorderSide.none,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -354,4 +445,4 @@ class _ScheduleCard extends StatelessWidget {
     );
   }
 }
-// ignore_for_file: use_build_context_synchronously
+

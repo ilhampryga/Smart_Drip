@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// A date-picker input field styled as a chip/outlined button.
-///
-/// Shows the [label] and the selected date (or a placeholder if none).
-/// Taps open the system date picker.
 class DatePickerField extends StatefulWidget {
   const DatePickerField({
     super.key,

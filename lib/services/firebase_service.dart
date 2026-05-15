@@ -8,17 +8,17 @@ class FirebaseService {
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
 
-  /// Recursively converts a Firebase map (Map<Object?, Object?>) to
-  /// Map<String, dynamic> so Dart type casts work on all platforms.
-  /// Android Firebase SDK returns nested maps as Map<Object?, Object?>,
-  /// while web returns them as Map<String, dynamic>. This normalises both.
+  /// Recursively converts a Firebase map (`Map<Object?, Object?>`) to
+  /// `Map<String, dynamic>` so Dart type casts work on all platforms.
+  /// Android Firebase SDK returns nested maps as `Map<Object?, Object?>`,
+  /// while web returns them as `Map<String, dynamic>`. This normalises both.
   static Map<String, dynamic> _deepConvert(Map<dynamic, dynamic> raw) {
     return Map<String, dynamic>.fromEntries(
       raw.entries.map((e) {
         final key = e.key?.toString() ?? '';
         final val = e.value;
         if (val is Map) {
-          return MapEntry(key, _deepConvert(val as Map<dynamic, dynamic>));
+          return MapEntry(key, _deepConvert(val));
         }
         return MapEntry(key, val);
       }),
@@ -81,10 +81,10 @@ class FirebaseService {
       final list = <SensorData>[];
       for (final dateEntry in dateMap.values) {
         if (dateEntry is! Map) continue;
-        final records = _deepConvert(dateEntry as Map<dynamic, dynamic>);
+        final records = _deepConvert(dateEntry);
         for (final v in records.values) {
           if (v is Map) {
-            list.add(SensorData.fromMap(_deepConvert(v as Map<dynamic, dynamic>)));
+            list.add(SensorData.fromMap(_deepConvert(v)));
           }
         }
       }
@@ -94,17 +94,17 @@ class FirebaseService {
   }
 
   /// Sensor history for TODAY only — reads directly from
-  /// sensor_data/history/{YYYY-MM-DD} for efficiency (no full-scan needed).
+  /// sensor_data/daily_log/{YYYY-MM-DD} (entries stored directly under date node).
   Stream<List<SensorData>> get sensorTodayStream {
     final todayStr = _todayDateString();
-    return _db.ref('sensor_data/history/$todayStr').onValue.map((event) {
+    return _db.ref('sensor_data/daily_log/$todayStr').onValue.map((event) {
       final raw = event.snapshot.value;
       if (raw == null) return <SensorData>[];
       final map = _deepConvert(raw as Map<dynamic, dynamic>);
       final list = <SensorData>[];
       for (final v in map.values) {
         if (v is Map) {
-          list.add(SensorData.fromMap(_deepConvert(v as Map<dynamic, dynamic>)));
+          list.add(SensorData.fromMap(_deepConvert(v)));
         }
       }
       list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -113,7 +113,7 @@ class FirebaseService {
   }
 
   /// Irrigation history for TODAY only — reads directly from
-  /// irrigation_log/history/{YYYY-MM-DD} (nested structure, same as sensor).
+  /// irrigation_log/history/{YYYY-MM-DD} (entries stored directly under date node).
   Stream<List<Map<String, dynamic>>> get irrigationTodayStream {
     final todayStr = _todayDateString();
     return _db.ref('irrigation_log/history/$todayStr').onValue.map((event) {
@@ -128,13 +128,6 @@ class FirebaseService {
           (a['start_time'] as String).compareTo(b['start_time'] as String));
       return list;
     });
-  }
-
-  /// Returns true if [ts] (any ISO-8601 variant) falls on [dateStr] ("YYYY-MM-DD").
-  bool _timestampMatchesDate(String ts, String dateStr) {
-    if (ts.isEmpty) return false;
-    // Timestamps may be "YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD HH:mm:ss" or just the date
-    return ts.startsWith(dateStr);
   }
 
   /// Returns today's date as "YYYY-MM-DD" string.
@@ -172,8 +165,8 @@ class FirebaseService {
       if (raw == null) return <SensorData>[];
       final map = Map<String, dynamic>.from(raw as Map);
       return map.values
-          .where((v) => v is Map)
-          .map((v) => SensorData.fromMap(v as Map<dynamic, dynamic>))
+          .whereType<Map<dynamic, dynamic>>()
+          .map((v) => SensorData.fromMap(v))
           .toList()
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
     });
@@ -207,7 +200,7 @@ class FirebaseService {
         if (dateEntry is! Map) continue;
         final records = dateEntry is Map<String, dynamic>
             ? dateEntry
-            : _deepConvert(dateEntry as Map<dynamic, dynamic>);
+            : _deepConvert(dateEntry);
         for (final v in records.values) {
           if (v is Map<String, dynamic>) list.add(v);
         }
