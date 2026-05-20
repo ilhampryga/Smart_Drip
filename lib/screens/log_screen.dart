@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/sensor_line_chart.dart';
+import '../widgets/multi_day_line_chart.dart';
 import '../widgets/water_usage_bar_chart.dart';
 import '../widgets/date_picker_field.dart';
 import '../services/firebase_service.dart';
@@ -18,13 +19,11 @@ class _LogScreenState extends State<LogScreen> {
 
   final _svc = FirebaseService.instance;
 
-  /// Returns "YYYY-MM-DD" string from a DateTime.
   String _dateStr(DateTime dt) =>
       '${dt.year.toString().padLeft(4, '0')}-'
       '${dt.month.toString().padLeft(2, '0')}-'
       '${dt.day.toString().padLeft(2, '0')}';
 
-  /// Filter sensor history by selected date range.
   List<SensorData> _filterSensor(List<SensorData> all) {
     if (_startDate == null && _endDate == null) return all;
     return all.where((d) {
@@ -33,9 +32,7 @@ class _LogScreenState extends State<LogScreen> {
         final dt = DateTime.parse(d.timestamp);
         if (_startDate != null && dt.isBefore(_startDate!)) return false;
         if (_endDate != null &&
-            dt.isAfter(_endDate!.add(const Duration(days: 1)))) {
-          return false;
-        }
+            dt.isAfter(_endDate!.add(const Duration(days: 1)))) return false;
         return true;
       } catch (_) {
         return true;
@@ -43,7 +40,6 @@ class _LogScreenState extends State<LogScreen> {
     }).toList();
   }
 
-  /// Filter irrigation history by selected date range.
   List<Map<String, dynamic>> _filterIrrigation(
       List<Map<String, dynamic>> all) {
     if (_startDate == null && _endDate == null) return all;
@@ -54,9 +50,7 @@ class _LogScreenState extends State<LogScreen> {
         final dt = DateTime.parse(t);
         if (_startDate != null && dt.isBefore(_startDate!)) return false;
         if (_endDate != null &&
-            dt.isAfter(_endDate!.add(const Duration(days: 1)))) {
-          return false;
-        }
+            dt.isAfter(_endDate!.add(const Duration(days: 1)))) return false;
         return true;
       } catch (_) {
         return true;
@@ -64,18 +58,26 @@ class _LogScreenState extends State<LogScreen> {
     }).toList();
   }
 
-  /// Whether the current filter covers exactly one day.
   bool get _isSingleDay =>
       _startDate != null &&
       _endDate != null &&
       _dateStr(_startDate!) == _dateStr(_endDate!);
 
-  /// Whether the current filter covers today only.
+  bool get _isMultiDay =>
+      _startDate != null &&
+      _endDate != null &&
+      !_isSingleDay;
+
   bool get _isToday {
     final today = _dateStr(DateTime.now());
-    if (_startDate == null && _endDate == null) return false;
     if (_isSingleDay) return _dateStr(_startDate!) == today;
     return false;
+  }
+
+  /// Number of days in range (null = no filter).
+  int? get _dayCount {
+    if (_startDate == null || _endDate == null) return null;
+    return _endDate!.difference(_startDate!).inDays + 1;
   }
 
   @override
@@ -98,25 +100,23 @@ class _LogScreenState extends State<LogScreen> {
                 final sensors = _filterSensor(allSensors);
                 final irrigation = _filterIrrigation(allIrrigation);
 
-                // Determine if we should use 24h mode for charts
-                // (only when viewing a single specific day)
                 final use24h = _isSingleDay;
+                final useMultiDay = _isMultiDay;
 
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ── Date range pickers ──
+                      // ── Date range pickers ──────────────────────────────
                       Row(
                         children: [
                           DatePickerField(
                             label: 'Tanggal Mulai',
                             initialDate: _startDate,
                             lastDate: _endDate ?? DateTime.now(),
-                            onDateChanged: (date) {
-                              setState(() => _startDate = date);
-                            },
+                            onDateChanged: (d) =>
+                                setState(() => _startDate = d),
                           ),
                           const SizedBox(width: 10),
                           DatePickerField(
@@ -124,14 +124,13 @@ class _LogScreenState extends State<LogScreen> {
                             initialDate: _endDate,
                             firstDate: _startDate,
                             lastDate: DateTime.now(),
-                            onDateChanged: (date) {
-                              setState(() => _endDate = date);
-                            },
+                            onDateChanged: (d) =>
+                                setState(() => _endDate = d),
                           ),
                         ],
                       ),
 
-                      // ── Reset filter button ──
+                      // ── Reset filter ────────────────────────────────────
                       if (_startDate != null || _endDate != null) ...[
                         const SizedBox(height: 8),
                         Row(
@@ -145,8 +144,7 @@ class _LogScreenState extends State<LogScreen> {
                               label: const Text('Reset Filter'),
                               style: TextButton.styleFrom(
                                 foregroundColor: cs.error,
-                                textStyle:
-                                    const TextStyle(fontSize: 12),
+                                textStyle: const TextStyle(fontSize: 12),
                               ),
                             ),
                             const Spacer(),
@@ -155,15 +153,14 @@ class _LogScreenState extends State<LogScreen> {
                                 '${sensors.length} data sensor  •  '
                                 '${irrigation.length} irigasi',
                                 style: theme.textTheme.labelSmall?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
+                                    color: cs.onSurfaceVariant),
                               ),
                           ],
                         ),
                       ],
                       const SizedBox(height: 16),
 
-                      // ── Info chip if viewing single day ──
+                      // ── Info chip ───────────────────────────────────────
                       if (use24h) ...[
                         _InfoChip(
                           icon: Icons.info_outline,
@@ -177,7 +174,18 @@ class _LogScreenState extends State<LogScreen> {
                         const SizedBox(height: 12),
                       ],
 
-                      // ── Water usage bar chart ──
+                      if (useMultiDay) ...[
+                        _InfoChip(
+                          icon: Icons.multiline_chart,
+                          text: 'Menampilkan ${_dayCount} hari — '
+                              'tiap warna = 1 hari | garis putus = ambang batas wajar',
+                          color: cs.secondaryContainer,
+                          textColor: cs.onSecondaryContainer,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // ── Water usage bar chart ───────────────────────────
                       _chartTitle(context, 'Grafik Penggunaan Air', [
                         _dot(cs.primary, 'Volume (ml)', theme),
                       ]),
@@ -185,35 +193,58 @@ class _LogScreenState extends State<LogScreen> {
                       WaterUsageBarChart(data: irrigation, height: 160),
                       const SizedBox(height: 16),
 
-                      // ── Temperature line chart ──
-                      _chartTitle(context, 'Grafik Suhu', [
-                        _dot(cs.primary, 'Suhu (°C)', theme),
-                      ]),
-                      const SizedBox(height: 6),
-                      SensorLineChart(
-                        data: sensors,
-                        height: 160,
-                        showBothLines: false,
-                        showTemperature: true,
-                        is24HourMode: use24h,
+                      // ── Temperature chart ───────────────────────────────
+                      _chartTitle(
+                        context,
+                        'Grafik Suhu',
+                        useMultiDay
+                            ? [] // legend is inside MultiDayLineChart
+                            : [_dot(cs.primary, 'Suhu (°C)', theme)],
                       ),
+                      const SizedBox(height: 6),
+                      if (useMultiDay)
+                        MultiDayLineChart(
+                          data: sensors,
+                          height: 200,
+                          showTemperature: true,
+                        )
+                      else
+                        SensorLineChart(
+                          data: sensors,
+                          height: 160,
+                          showBothLines: false,
+                          showTemperature: true,
+                          is24HourMode: use24h,
+                        ),
                       const SizedBox(height: 16),
 
-                      // ── Soil moisture line chart ──
-                      _chartTitle(context, 'Grafik Kelembapan Tanah', [
-                        const _LegendDot(
-                          color: Colors.blueAccent,
-                          label: 'Kelembapan (%)',
-                        ),
-                      ]),
-                      const SizedBox(height: 6),
-                      SensorLineChart(
-                        data: sensors,
-                        height: 160,
-                        showBothLines: false,
-                        showTemperature: false,
-                        is24HourMode: use24h,
+                      // ── Soil moisture chart ─────────────────────────────
+                      _chartTitle(
+                        context,
+                        'Grafik Kelembapan Tanah',
+                        useMultiDay
+                            ? []
+                            : [
+                                const _LegendDot(
+                                    color: Colors.blueAccent,
+                                    label: 'Kelembapan (%)'),
+                              ],
                       ),
+                      const SizedBox(height: 6),
+                      if (useMultiDay)
+                        MultiDayLineChart(
+                          data: sensors,
+                          height: 200,
+                          showTemperature: false,
+                        )
+                      else
+                        SensorLineChart(
+                          data: sensors,
+                          height: 160,
+                          showBothLines: false,
+                          showTemperature: false,
+                          is24HourMode: use24h,
+                        ),
                       const SizedBox(height: 8),
                     ],
                   ),
@@ -250,9 +281,9 @@ class _LogScreenState extends State<LogScreen> {
       _LegendDot(color: color, label: label);
 }
 
-// ──────────────────────────────────────────────
-// Widgets
-// ──────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// Local widgets
+// ──────────────────────────────────────────────────────────────────────────────
 
 class _InfoChip extends StatelessWidget {
   const _InfoChip({
@@ -307,7 +338,8 @@ class _LegendDot extends StatelessWidget {
         Container(
           width: 10,
           height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          decoration:
+              BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 4),
         Text(

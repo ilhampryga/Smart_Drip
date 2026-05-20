@@ -134,20 +134,20 @@ class BmkgService {
       final now = DateTime.now();
       final List<HourlyWeather> hourlyList = [];
 
-      // Start taking from the current hour until end of today
+      // Collect ALL 24 hours of today (filtering for display is done at widget level).
       for (int i = 0; i < times.length; i++) {
         final tStr = times[i] as String;
         final t = DateTime.parse(tStr);
-        if (t.day == now.day && !t.isBefore(DateTime(now.year, now.month, now.day, now.hour))) {
-           hourlyList.add(HourlyWeather(
-             time: '${t.hour.toString().padLeft(2, '0')}:00 WIB',
-             temperature: (temps[i] as num).toInt(),
-             humidity: (hums[i] as num).toInt(),
-             weatherCode: (codes[i] as num).toInt(),
-             description: instance._translateWMO((codes[i] as num).toInt()),
-             windSpeed: (winds[i] as num).toDouble(),
-             windDir: instance._getWindDirection((dirs[i] as num).toInt()),
-           ));
+        if (t.day == now.day) {
+          hourlyList.add(HourlyWeather(
+            time: '${t.hour.toString().padLeft(2, '0')}:00 WIB',
+            temperature: (temps[i] as num).toInt(),
+            humidity: (hums[i] as num).toInt(),
+            weatherCode: (codes[i] as num).toInt(),
+            description: instance._translateWMO((codes[i] as num).toInt()),
+            windSpeed: (winds[i] as num).toDouble(),
+            windDir: instance._getWindDirection((dirs[i] as num).toInt()),
+          ));
         }
       }
 

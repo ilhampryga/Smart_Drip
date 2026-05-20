@@ -235,6 +235,20 @@ class _WeatherContent extends StatelessWidget {
   Widget build(BuildContext context) {
     if (data.hourly.isEmpty) return const SizedBox();
 
+    // For the card tiles: only show current hour and future hours.
+    // (The chart still uses the full 24-hour list from data.hourly.)
+    final now = DateTime.now();
+    final currentHour = now.hour;
+    final visibleHourly = data.hourly.where((h) {
+      // h.time is "07:00 WIB" — parse the hour
+      try {
+        final hour = int.parse(h.time.split(':')[0]);
+        return hour >= currentHour;
+      } catch (_) {
+        return true;
+      }
+    }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -263,20 +277,28 @@ class _WeatherContent extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         
-        // Horizontal list of hours
+        // Horizontal list of hours (current hour onwards only)
         SizedBox(
-          height: 200, // Reduced height since wind and humidity are removed
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: data.hourly.length,
-            itemBuilder: (context, index) {
-              final h = data.hourly[index];
-              return _HourlyTile(hourly: h);
-            },
-          ),
+          height: 200,
+          child: visibleHourly.isEmpty
+              ? Center(
+                  child: Text(
+                    'Tidak ada prakiraan tersisa hari ini',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                )
+              : ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: visibleHourly.length,
+                  itemBuilder: (context, index) {
+                    final h = visibleHourly[index];
+                    return _HourlyTile(hourly: h);
+                  },
+                ),
         ),
         
-        // BMKG Attribution (kept for credit)
+        // Attribution
         const SizedBox(height: 12),
         Row(
           children: [

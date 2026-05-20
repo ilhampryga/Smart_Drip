@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import '../widgets/sensor_card.dart';
 import '../widgets/pump_card.dart';
-import '../widgets/sensor_line_chart.dart';
+import '../widgets/dual_temp_line_chart.dart';
+import '../widgets/multi_day_line_chart.dart';
 import '../widgets/water_usage_bar_chart.dart';
 import '../widgets/weather_card.dart';
 import '../services/firebase_service.dart';
 import '../services/daily_archive_service.dart';
+import '../services/bmkg_service.dart';
 import '../models/sensor_data.dart' show SensorData;
 import '../models/system_control.dart' show SystemControl;
 
@@ -19,49 +21,54 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final _svc = FirebaseService.instance;
 
-  // Cached streams — must be stable object references for StreamBuilder.
-  // Creating them inside build() causes re-subscription on every parent rebuild.
   late final Stream<List<SensorData>> _sensorTodayStream;
+  late final Stream<List<SensorData>> _sensorHistoryRecentStream;
   late final Stream<List<Map<String, dynamic>>> _irrigationTodayStream;
+
+  // Weather future — managed at state level to avoid FutureBuilder race conditions.
+  Future<WeatherData?> _weatherFuture = Future.value(null);
+  double? _lat;
+  double? _lon;
+  late final _plantSub = _svc.plantConfigStream.listen((config) {
+    final lat = (config['latitude'] as num?)?.toDouble();
+    final lon = (config['longitude'] as num?)?.toDouble();
+    // Only re-fetch when valid coordinates first arrive or change.
+    if (lat != null && lon != null && (lat != _lat || lon != _lon)) {
+      _lat = lat;
+      _lon = lon;
+      setState(() {
+        _weatherFuture = BmkgService.instance.fetchWeather(lat, lon);
+      });
+    }
+  });
 
   @override
   void initState() {
     super.initState();
     _sensorTodayStream = _svc.sensorTodayStream;
+    _sensorHistoryRecentStream = _svc.sensorHistoryRecentStream(2);
     _irrigationTodayStream = _svc.irrigationTodayStream;
-    // Trigger daily archive check on dashboard open
     DailyArchiveService.instance.checkAndArchive();
+    BmkgService.instance.clearCache();
+    _plantSub; // trigger lazy init
   }
 
-  /// Returns formatted date string: e.g. "Sabtu, 2 Mei 2026"
+  @override
+  void dispose() {
+    _plantSub.cancel();
+    super.dispose();
+  }
+
   String _formattedToday() {
     final now = DateTime.now();
     const days = [
-      'Senin',
-      'Selasa',
-      'Rabu',
-      'Kamis',
-      'Jumat',
-      'Sabtu',
-      'Minggu',
+      'Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu',
     ];
     const months = [
-      'Januari',
-      'Februari',
-      'Maret',
-      'April',
-      'Mei',
-      'Juni',
-      'Juli',
-      'Agustus',
-      'September',
-      'Oktober',
-      'November',
-      'Desember',
+      'Januari','Februari','Maret','April','Mei','Juni',
+      'Juli','Agustus','September','Oktober','November','Desember',
     ];
-    final dayName = days[now.weekday - 1];
-    final monthName = months[now.month - 1];
-    return '$dayName, ${now.day} $monthName ${now.year}';
+    return '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]} ${now.year}';
   }
 
   @override
@@ -70,9 +77,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final cs = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-      ),
+      appBar: AppBar(title: const Text('Dashboard')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
@@ -100,7 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                       return Column(
                         children: [
-                          // ── sensor / pump cards ──
+                          // ── Sensor / pump cards ──────────────────────────
                           GridView.count(
                             crossAxisCount: 2,
                             crossAxisSpacing: 12,
@@ -123,9 +128,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                               PumpCard(
                                 initialValue: ctrl?.isPumpOn ?? false,
-                                statusStream: _svc.systemControlStream.map(
-                                  (c) => c.isPumpOn,
-                                ),
+                                statusStream: _svc.systemControlStream
+                                    .map((c) => c.isPumpOn),
                               ),
                               SensorCard(
                                 label: 'ETc Hari Ini',
@@ -137,7 +141,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // ── Weather card (BMKG) ──
+                          // ── Weather card (Open-Meteo) ────────────────────
                           StreamBuilder<Map<String, dynamic>>(
                             stream: _svc.plantConfigStream,
                             builder: (ctx, plantSnap) {
@@ -155,37 +159,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          // ── Date badge ──
+                          // ── Date badge ───────────────────────────────────
                           _DateBadge(label: _formattedToday()),
                           const SizedBox(height: 10),
 
-                          // ── Sensor history chart — today only ──
+                          // ── Temperature chart: sensor + Open-Meteo ───────
                           _ChartCard(
-                            title: 'Grafik Suhu & Kelembapan Tanah',
-                            subtitle: 'Data hari ini (00:00–23:59)',
+                            title: 'Grafik Suhu Hari Ini',
+                            subtitle: 'Sensor ESP8266 vs prakiraan Open-Meteo',
                             legend: [
                               _LegendItem(
-                                color: cs.primary,
-                                label: 'Suhu (°C)',
+                                color: const Color(0xFF6366F1),
+                                label: 'Sensor (°C)',
+                                dashed: false,
                               ),
-                              const _LegendItem(
-                                color: Colors.blueAccent,
-                                label: 'Kelembapan (%)',
+                              _LegendItem(
+                                color: const Color(0xFFF97316),
+                                label: 'Open-Meteo (°C)',
+                                dashed: true,
                               ),
                             ],
-                            child: StreamBuilder<List<SensorData>>(
-                              stream: _sensorTodayStream,
-                              builder: (ctx, snap) => SensorLineChart(
-                                data: snap.data ?? [],
-                                height: 180,
-                                showBothLines: true,
-                                is24HourMode: true,
-                              ),
+                            child: FutureBuilder<WeatherData?>(
+                              future: _weatherFuture,
+                              builder: (ctx, weatherSnap) {
+                                final hourly =
+                                    weatherSnap.data?.hourly ?? [];
+                                return StreamBuilder<List<SensorData>>(
+                                  stream: _sensorTodayStream,
+                                  builder: (ctx, snap) => DualTempLineChart(
+                                    sensorData: snap.data ?? [],
+                                    weatherHourly: hourly,
+                                    height: 200,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(height: 12),
 
-                          // ── Water usage chart — today only ──
+                          // ── Soil moisture: hari ini (daily_log) + 2 hari lalu (history) ──
+                          _ChartCard(
+                            title: 'Grafik Kelembapan Tanah',
+                            subtitle: '3 hari terakhir + ambang batas wajar 60–80%',
+                            legend: const [],
+                            child: StreamBuilder<List<SensorData>>(
+                              stream: _sensorTodayStream,
+                              builder: (ctx, todaySnap) {
+                                final todayData = todaySnap.data ?? [];
+                                return StreamBuilder<List<SensorData>>(
+                                  stream: _sensorHistoryRecentStream,
+                                  builder: (ctx, histSnap) {
+                                    final histData = histSnap.data ?? [];
+                                    // Merge: closed days (history) + today (daily_log)
+                                    final combined = [...histData, ...todayData];
+                                    combined.sort((a, b) =>
+                                        a.timestamp.compareTo(b.timestamp));
+                                    return MultiDayLineChart(
+                                      data: combined,
+                                      height: 200,
+                                      showTemperature: false,
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // ── Water usage chart — today only ───────────────
                           _ChartCard(
                             title: 'Grafik Penggunaan Air',
                             subtitle: 'Irigasi hari ini',
@@ -193,6 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               _LegendItem(
                                 color: cs.primary,
                                 label: 'Volume (ml)',
+                                dashed: false,
                               ),
                             ],
                             child: StreamBuilder<List<Map<String, dynamic>>>(
@@ -218,9 +260,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// ──────────────────────────────────────────────
-// Date badge widget
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Date badge
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _DateBadge extends StatelessWidget {
   const _DateBadge({required this.label});
@@ -239,8 +281,7 @@ class _DateBadge extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.calendar_today_outlined,
-              size: 14, color: cs.primary),
+          Icon(Icons.calendar_today_outlined, size: 14, color: cs.primary),
           const SizedBox(width: 8),
           Text(
             label,
@@ -255,9 +296,9 @@ class _DateBadge extends StatelessWidget {
   }
 }
 
-// ──────────────────────────────────────────────
-// Reusable chart card wrapper with title + legend
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Chart card wrapper
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _ChartCard extends StatelessWidget {
   const _ChartCard({
@@ -315,10 +356,19 @@ class _ChartCard extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Legend item (supports dashed line indicator)
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _LegendItem extends StatelessWidget {
-  const _LegendItem({required this.color, required this.label});
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    this.dashed = false,
+  });
   final Color color;
   final String label;
+  final bool dashed;
 
   @override
   Widget build(BuildContext context) {
@@ -328,10 +378,11 @@ class _LegendItem extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          // Line indicator — solid or dashed
+          SizedBox(
+            width: 18,
+            height: 12,
+            child: CustomPaint(painter: _LinePainter(color: color, dashed: dashed)),
           ),
           const SizedBox(width: 4),
           Text(
@@ -345,4 +396,37 @@ class _LegendItem extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LinePainter extends CustomPainter {
+  _LinePainter({required this.color, required this.dashed});
+  final Color color;
+  final bool dashed;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    if (!dashed) {
+      canvas.drawLine(
+          Offset(0, size.height / 2), Offset(size.width, size.height / 2), paint);
+    } else {
+      double x = 0;
+      const dash = 4.0, gap = 3.0;
+      while (x < size.width) {
+        canvas.drawLine(
+          Offset(x, size.height / 2),
+          Offset((x + dash).clamp(0, size.width), size.height / 2),
+          paint,
+        );
+        x += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

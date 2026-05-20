@@ -93,6 +93,46 @@ class FirebaseService {
     });
   }
 
+  /// Sensor history from sensor_data/history filtered to the last [pastDays]
+  /// CLOSED calendar days (i.e. days before today — today is in daily_log).
+  /// E.g. pastDays=2 → yesterday and day-before-yesterday.
+  Stream<List<SensorData>> sensorHistoryRecentStream(int pastDays) {
+    return _db.ref('sensor_data/history').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <SensorData>[];
+
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      // cutoff = start of (today - pastDays)
+      final cutoff = todayStart.subtract(Duration(days: pastDays));
+
+      final dateMap = _deepConvert(raw as Map<dynamic, dynamic>);
+      final list = <SensorData>[];
+
+      for (final entry in dateMap.entries) {
+        try {
+          final entryDate = DateTime.parse(entry.key as String);
+          // Only include past days within range (exclude today and older than cutoff)
+          if (entryDate.isBefore(cutoff)) continue;
+          if (!entryDate.isBefore(todayStart)) continue; // skip today
+        } catch (_) {
+          continue;
+        }
+        if (entry.value is! Map) continue;
+        final records = _deepConvert(entry.value as Map<dynamic, dynamic>);
+        for (final v in records.values) {
+          if (v is Map) {
+            list.add(SensorData.fromMap(_deepConvert(v)));
+          }
+        }
+      }
+
+      list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      return list;
+    });
+  }
+
+
   /// Sensor history for TODAY only — reads directly from
   /// sensor_data/daily_log/{YYYY-MM-DD} (entries stored directly under date node).
   Stream<List<SensorData>> get sensorTodayStream {
@@ -111,6 +151,45 @@ class FirebaseService {
       return list;
     });
   }
+
+  /// Sensor data from sensor_data/daily_log for the last [days] calendar days.
+  /// E.g. days=3 → today, yesterday, and the day before.
+  /// All date nodes within the range are merged into a single sorted list.
+  Stream<List<SensorData>> sensorDailyLogRecentStream(int days) {
+    return _db.ref('sensor_data/daily_log').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <SensorData>[];
+
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      // Inclusive cutoff: start of (today - (days-1))
+      final cutoff = todayStart.subtract(Duration(days: days - 1));
+
+      final dateMap = _deepConvert(raw as Map<dynamic, dynamic>);
+      final list = <SensorData>[];
+
+      for (final entry in dateMap.entries) {
+        // entry.key must be "YYYY-MM-DD"
+        try {
+          final entryDate = DateTime.parse(entry.key as String);
+          if (entryDate.isBefore(cutoff)) continue; // too old
+        } catch (_) {
+          continue;
+        }
+        if (entry.value is! Map) continue;
+        final records = _deepConvert(entry.value as Map<dynamic, dynamic>);
+        for (final v in records.values) {
+          if (v is Map) {
+            list.add(SensorData.fromMap(_deepConvert(v)));
+          }
+        }
+      }
+
+      list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      return list;
+    });
+  }
+
 
   /// Irrigation history for TODAY only — reads directly from
   /// irrigation_log/history/{YYYY-MM-DD} (entries stored directly under date node).
