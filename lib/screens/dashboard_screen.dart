@@ -21,15 +21,24 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final _svc = FirebaseService.instance;
 
+  // ── All Firebase streams cached as late final ─────────────────────────────
+  // NEVER access _svc stream getters inside build() — each getter call creates
+  // a new single-subscription stream, and two StreamBuilders on the same object
+  // throws "Bad state: Stream has already been listened to".
+  late final Stream<SensorData> _sensorDataStream;
+  late final Stream<double> _etcStream;
+  late final Stream<SystemControl> _systemControlStream;
+  late final Stream<bool> _pumpStatusStream;
+  late final Stream<Map<String, dynamic>> _plantConfigStream;
   late final Stream<List<SensorData>> _sensorTodayStream;
-  late final Stream<List<SensorData>> _sensorHistoryRecentStream;
+
   late final Stream<List<Map<String, dynamic>>> _irrigationTodayStream;
 
   // Weather future — managed at state level to avoid FutureBuilder race conditions.
   Future<WeatherData?> _weatherFuture = Future.value(null);
   double? _lat;
   double? _lon;
-  late final _plantSub = _svc.plantConfigStream.listen((config) {
+  late final _plantSub = _plantConfigStream.listen((config) {
     final lat = (config['latitude'] as num?)?.toDouble();
     final lon = (config['longitude'] as num?)?.toDouble();
     // Only re-fetch when valid coordinates first arrive or change.
@@ -45,9 +54,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _sensorTodayStream = _svc.sensorTodayStream;
-    _sensorHistoryRecentStream = _svc.sensorHistoryRecentStream(2);
-    _irrigationTodayStream = _svc.irrigationTodayStream;
+    // Initialise all streams ONCE — order matters for _pumpStatusStream
+    _sensorDataStream   = _svc.sensorDataStream;
+    _etcStream          = _svc.etcStream;
+    // _systemControlStream is subscribed TWICE (outer StreamBuilder +
+    // _pumpStatusStream.map). On Android, Firebase streams are
+    // single-subscription → must convert to broadcast first.
+    _systemControlStream = _svc.systemControlStream.asBroadcastStream();
+    _pumpStatusStream   = _systemControlStream.map((c) => c.isPumpOn);
+    // _plantConfigStream is subscribed TWICE (_plantSub.listen +
+    // WeatherCard StreamBuilder) → same reason, must be broadcast.
+    _plantConfigStream  = _svc.plantConfigStream.asBroadcastStream();
+    _sensorTodayStream  = _svc.sensorTodayStream;
+
+    _irrigationTodayStream = _svc.irrigationDailyLogTodayStream;
     DailyArchiveService.instance.checkAndArchive();
     BmkgService.instance.clearCache();
     _plantSub; // trigger lazy init
@@ -82,13 +102,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: StreamBuilder<SensorData>(
-            stream: _svc.sensorDataStream,
+            stream: _sensorDataStream,
             builder: (context, sensorSnap) {
               return StreamBuilder<double>(
-                stream: _svc.etcStream,
+                stream: _etcStream,
                 builder: (context, etcSnap) {
                   return StreamBuilder<SystemControl>(
-                    stream: _svc.systemControlStream,
+                    stream: _systemControlStream,
                     builder: (context, ctrlSnap) {
                       final sensor = sensorSnap.data;
                       final etc = etcSnap.data ?? 0.0;
@@ -128,8 +148,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                               PumpCard(
                                 initialValue: ctrl?.isPumpOn ?? false,
-                                statusStream: _svc.systemControlStream
-                                    .map((c) => c.isPumpOn),
+                                statusStream: _pumpStatusStream,
                               ),
                               SensorCard(
                                 label: 'ETc Hari Ini',
@@ -143,7 +162,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                           // ── Weather card (Open-Meteo) ────────────────────
                           StreamBuilder<Map<String, dynamic>>(
-                            stream: _svc.plantConfigStream,
+                            stream: _plantConfigStream,
                             builder: (ctx, plantSnap) {
                               final lat =
                                   (plantSnap.data?['latitude'] as num?)
@@ -163,66 +182,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           _DateBadge(label: _formattedToday()),
                           const SizedBox(height: 10),
 
-                          // ── Temperature chart: sensor + Open-Meteo ───────
-                          _ChartCard(
-                            title: 'Grafik Suhu Hari Ini',
-                            subtitle: 'Sensor ESP8266 vs prakiraan Open-Meteo',
-                            legend: [
-                              _LegendItem(
-                                color: const Color(0xFF6366F1),
-                                label: 'Sensor (°C)',
-                                dashed: false,
-                              ),
-                              _LegendItem(
-                                color: const Color(0xFFF97316),
-                                label: 'Open-Meteo (°C)',
-                                dashed: true,
-                              ),
-                            ],
-                            child: FutureBuilder<WeatherData?>(
-                              future: _weatherFuture,
-                              builder: (ctx, weatherSnap) {
-                                final hourly =
-                                    weatherSnap.data?.hourly ?? [];
-                                return StreamBuilder<List<SensorData>>(
-                                  stream: _sensorTodayStream,
-                                  builder: (ctx, snap) => DualTempLineChart(
-                                    sensorData: snap.data ?? [],
-                                    weatherHourly: hourly,
-                                    height: 200,
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 12),
+                          // ── Today sensor data: single StreamBuilder feeds both charts ─
+                          StreamBuilder<List<SensorData>>(
+                            stream: _sensorTodayStream,
+                            builder: (ctx, todaySnap) {
+                              final todayData = todaySnap.data ?? [];
 
-                          // ── Soil moisture: hari ini (daily_log) + 2 hari lalu (history) ──
-                          _ChartCard(
-                            title: 'Grafik Kelembapan Tanah',
-                            subtitle: '3 hari terakhir + ambang batas wajar 60–80%',
-                            legend: const [],
-                            child: StreamBuilder<List<SensorData>>(
-                              stream: _sensorTodayStream,
-                              builder: (ctx, todaySnap) {
-                                final todayData = todaySnap.data ?? [];
-                                return StreamBuilder<List<SensorData>>(
-                                  stream: _sensorHistoryRecentStream,
-                                  builder: (ctx, histSnap) {
-                                    final histData = histSnap.data ?? [];
-                                    // Merge: closed days (history) + today (daily_log)
-                                    final combined = [...histData, ...todayData];
-                                    combined.sort((a, b) =>
-                                        a.timestamp.compareTo(b.timestamp));
-                                    return MultiDayLineChart(
-                                      data: combined,
+                              return Column(
+                                children: [
+                                  // ── Temperature chart: sensor + Open-Meteo ─
+                                  _ChartCard(
+                                    title: 'Grafik Suhu Hari Ini',
+                                    legend: [
+                                      _LegendItem(
+                                        color: const Color(0xFF6366F1),
+                                        label: 'Sensor (°C)',
+                                        dashed: false,
+                                      ),
+                                      _LegendItem(
+                                        color: const Color(0xFFF97316),
+                                        label: 'Open-Meteo (°C)',
+                                        dashed: true,
+                                      ),
+                                    ],
+                                    child: FutureBuilder<WeatherData?>(
+                                      future: _weatherFuture,
+                                      builder: (ctx, weatherSnap) {
+                                        final hourly =
+                                            weatherSnap.data?.hourly ?? [];
+                                        return DualTempLineChart(
+                                          sensorData: todayData,
+                                          weatherHourly: hourly,
+                                          height: 200,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // ── Soil moisture: hari ini saja ───────────
+                                  _ChartCard(
+                                    title: 'Grafik Kelembapan Tanah',
+                                    legend: const [],
+                                    child: MultiDayLineChart(
+                                      data: todayData,
                                       height: 200,
                                       showTemperature: false,
-                                    );
-                                  },
-                                );
-                              },
-                            ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 12),
 
@@ -259,10 +269,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Date badge
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _DateBadge extends StatelessWidget {
   const _DateBadge({required this.label});

@@ -1,17 +1,13 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
-/// Bar chart for irrigation water usage.
+/// Bar chart untuk penggunaan air irigasi.
 ///
-/// In 24-hour mode (default for dashboard):
-///   - Each bar represents one irrigation event today.
-///   - X-axis labels show HH:mm, max 8 labels shown to avoid crowding.
-///   - Bars are auto-sized and the chart scrolls horizontally if data > 8.
-///
-/// Bars are colored by mode:
-///   - "ETC_FUZZY" → primary green gradient
-///   - "NON_ETC"   → blue gradient
-///   - other        → grey
+/// - Setiap bar = 1 event irigasi.
+/// - Sumbu X: label "dd/MM HH:mm" untuk bar pertama setiap hari,
+///   "HH:mm" untuk bar hari yang sama.
+/// - Tooltip: tanggal+waktu lengkap, volume, mode.
+/// - Scroll horizontal otomatis saat bar > 8.
 class WaterUsageBarChart extends StatefulWidget {
   const WaterUsageBarChart({
     super.key,
@@ -19,9 +15,8 @@ class WaterUsageBarChart extends StatefulWidget {
     this.height = 180,
   });
 
-  /// Ordered irrigation history list (oldest → newest).
-  /// Each map must contain: 'water_volume' (num), 'start_time' (String),
-  /// and optionally 'mode' (String: "ETC_FUZZY" | "NON_ETC").
+  /// Setiap map harus mengandung: 'water_volume' (num), 'timestamp' (String),
+  /// dan opsional 'mode' (String: "ETC_FUZZY" | "NON_ETC").
   final List<Map<String, dynamic>> data;
   final double height;
 
@@ -60,7 +55,7 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
     }
   }
 
-  /// Shorten a timestamp string to "HH:mm".
+  /// Ekstrak "HH:mm" dari timestamp.
   String _toHhmm(String? raw) {
     if (raw == null || raw.isEmpty) return '';
     try {
@@ -68,6 +63,29 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
       return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return raw.length >= 16 ? raw.substring(11, 16) : raw;
+    }
+  }
+
+  /// Ekstrak "dd/MM" dari timestamp.
+  String _toDdMm(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(raw);
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Format "dd/MM HH:mm" untuk tooltip.
+  String _toDateHhmm(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(raw);
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} '
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return raw.length >= 16 ? raw.substring(5, 16) : raw;
     }
   }
 
@@ -84,17 +102,13 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.bar_chart_outlined,
-                  size: 40,
-                  color: Colors.grey.shade300,
-                ),
+                Icon(Icons.bar_chart_outlined,
+                    size: 40, color: Colors.grey.shade300),
                 const SizedBox(height: 8),
                 Text(
-                  'Belum ada irigasi hari ini',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade400,
-                  ),
+                  'Belum ada data irigasi',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.grey.shade400),
                 ),
               ],
             ),
@@ -103,32 +117,49 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
       );
     }
 
+    final int count = widget.data.length;
+    final timestamps =
+        widget.data.map((d) => d['timestamp'] as String? ?? '').toList();
+
     final volumes = widget.data
         .map((d) => (d['water_volume'] as num?)?.toDouble() ?? 0.0)
         .toList();
-    final maxVol = volumes.isNotEmpty
-        ? volumes.reduce((a, b) => a > b ? a : b)
-        : 1.0;
+    final maxVol =
+        volumes.isNotEmpty ? volumes.reduce((a, b) => a > b ? a : b) : 1.0;
 
-    final modes = widget.data
-        .map((d) => (d['mode'] as String?) ?? 'ETC_FUZZY')
-        .toList();
+    final modes =
+        widget.data.map((d) => (d['mode'] as String?) ?? 'ETC_FUZZY').toList();
 
-    final labels = widget.data
-        .map((d) => _toHhmm(d['start_time'] as String?))
-        .toList();
+    // Label sumbu X: "dd/MM\nHH:mm" untuk bar pertama setiap hari, "HH:mm" saja untuk hari yang sama
+    final xLabels = List<String>.generate(count, (i) {
+      final ts = timestamps[i];
+      final ddmm = _toDdMm(ts);
+      final hhmm = _toHhmm(ts);
+      if (i == 0) return '$ddmm\n$hhmm'; // bar pertama selalu tampilkan tanggal
+      final prevDdmm = _toDdMm(timestamps[i - 1]);
+      // Tampilkan tanggal hanya saat berganti hari
+      return ddmm != prevDdmm ? '$ddmm\n$hhmm' : hhmm;
+    });
 
-    // Decide bar width based on count; scroll if too many
-    final int count = widget.data.length;
+    // Label tooltip: "dd/MM HH:mm"
+    final tooltipLabels = timestamps.map((t) => _toDateHhmm(t)).toList();
+
+    // Warna label: primer saat ada tanggal, abu-abu untuk jam saja
+    final xLabelColors = List<Color>.generate(count, (i) {
+      final ts = timestamps[i];
+      final ddmm = _toDdMm(ts);
+      if (i == 0) return cs.primary;
+      final prevDdmm = _toDdMm(timestamps[i - 1]);
+      return ddmm != prevDdmm ? cs.primary : Colors.grey.shade500;
+    });
+
     final double barWidth = count <= 6
-        ? 28.0
+        ? 26.0
         : count <= 12
             ? 18.0
             : 12.0;
 
-    // Show label every N bars to avoid crowding (target max ~8 labels)
-    final int labelEvery = (count / 8).ceil().clamp(1, 999);
-
+    // Build bar groups
     final barGroups = <BarChartGroupData>[];
     for (int i = 0; i < count; i++) {
       final isTouched = i == _touchedIndex;
@@ -144,9 +175,7 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
             BarChartRodData(
               toY: volumes[i],
               width: barWidth,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(6),
-              ),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
               gradient: LinearGradient(
                 colors: gradColors,
                 begin: Alignment.topCenter,
@@ -161,7 +190,6 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
 
     final interval = maxVol > 0 ? maxVol / 4 : 1.0;
 
-    // Chart content
     final chartWidget = BarChart(
       BarChartData(
         maxY: maxVol * 1.25,
@@ -172,16 +200,17 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
             });
           },
           touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (_) =>
-                cs.inverseSurface.withValues(alpha: 0.88),
+            getTooltipColor: (_) => cs.inverseSurface.withValues(alpha: 0.88),
             getTooltipItem: (group, _, rod, __) {
-              final mode = modes[group.x];
+              final idx = group.x;
               final modeLabel =
-                  mode == 'ETC_FUZZY' ? 'ETc+Fuzzy' : 'Non-ETc';
-              final timeLabel = labels[group.x];
+                  modes[idx] == 'ETC_FUZZY' ? 'ETc+Fuzzy' : 'Non-ETc';
+              final dtLabel = tooltipLabels[idx].isNotEmpty
+                  ? tooltipLabels[idx]
+                  : xLabels[idx];
               return BarTooltipItem(
                 '${rod.toY.toStringAsFixed(0)} ml\n$modeLabel'
-                '${timeLabel.isNotEmpty ? '\n$timeLabel' : ''}',
+                '${dtLabel.isNotEmpty ? '\n$dtLabel' : ''}',
                 TextStyle(
                   color: cs.onInverseSurface,
                   fontWeight: FontWeight.w600,
@@ -199,34 +228,30 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
               interval: interval,
               getTitlesWidget: (val, meta) => Text(
                 val.toStringAsFixed(0),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: Colors.grey.shade500,
-                  fontSize: 10,
-                ),
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: Colors.grey.shade500, fontSize: 10),
               ),
             ),
           ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 36,
+              reservedSize: 44,
               getTitlesWidget: (val, meta) {
                 final idx = val.toInt();
-                if (idx < 0 || idx >= labels.length) {
-                  return const SizedBox.shrink();
-                }
-                // Only show every labelEvery-th label
-                if (idx % labelEvery != 0) return const SizedBox.shrink();
-                return Transform.rotate(
-                  angle: -0.785, // -45 degrees in radians
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      labels[idx],
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.grey.shade500,
-                        fontSize: 9,
-                      ),
+                if (idx < 0 || idx >= count) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    xLabels[idx],
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: xLabelColors[idx],
+                      fontSize: 9,
+                      fontWeight: xLabelColors[idx] == Colors.grey.shade500
+                          ? FontWeight.normal
+                          : FontWeight.bold,
+                      height: 1.2,
                     ),
                   ),
                 );
@@ -234,11 +259,9 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
             ),
           ),
           rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
+              sideTitles: SideTitles(showTitles: false)),
           topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
+              sideTitles: SideTitles(showTitles: false)),
         ),
         gridData: FlGridData(
           show: true,
@@ -249,7 +272,6 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
         ),
         borderData: FlBorderData(show: false),
         barGroups: barGroups,
-        // Spacing between bars
         groupsSpace: count > 12 ? 4 : 8,
         alignment: BarChartAlignment.spaceEvenly,
       ),
@@ -260,12 +282,11 @@ class _WaterUsageBarChartState extends State<WaterUsageBarChart> {
         padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
         child: SizedBox(
           height: widget.height,
-          // Scroll horizontally when there are many bars
-          child: count > 12
+          child: count > 8
               ? SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
-                    width: count * (barWidth + 12),
+                    width: count * (barWidth + 14),
                     height: widget.height - 24,
                     child: chartWidget,
                   ),

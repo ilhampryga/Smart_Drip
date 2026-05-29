@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/firebase_service.dart';
+import '../widgets/plant_phase_chart.dart';
 
 /// Possible plant growth phases.
 enum PlantPhase {
@@ -25,17 +26,30 @@ class PlantConfigScreen extends StatefulWidget {
 }
 
 class _PlantConfigScreenState extends State<PlantConfigScreen> {
-  PlantPhase _selectedPhase = PlantPhase.awal;
   final TextEditingController _exactAgeCtrl = TextEditingController();
   double? _latitude;
   double? _longitude;
   bool _gpsLoading = false;
   String? _gpsError;
+  bool _isEditingAge = false;
+
+  int? get _hst => int.tryParse(_exactAgeCtrl.text);
+
+  PlantPhase get _derivedPhase {
+    final hst = _hst ?? 0;
+    if (hst <= 30) return PlantPhase.awal;
+    if (hst <= 70) return PlantPhase.perkembangan;
+    if (hst <= 180) return PlantPhase.tengah;
+    return PlantPhase.akhir;
+  }
 
   @override
   void initState() {
     super.initState();
     _loadExistingConfig();
+    _exactAgeCtrl.addListener(() {
+      setState(() {});
+    });
   }
 
   Future<void> _loadExistingConfig() async {
@@ -50,15 +64,42 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
           if (map['longitude'] != null) {
             _longitude = (map['longitude'] as num).toDouble();
           }
-          if (map['phase'] != null) {
-            final phaseLabel = map['phase'] as String;
-            final matched = PlantPhase.values.where((p) => p.label == phaseLabel);
-            if (matched.isNotEmpty) _selectedPhase = matched.first;
-          }
           if (map['exact_age_days'] != null) {
-            _exactAgeCtrl.text = map['exact_age_days'].toString();
+            final savedAge = (map['exact_age_days'] as num).toInt();
+            _exactAgeCtrl.text = savedAge.toString();
+
+            if (map['updated_at'] != null) {
+              _checkAutoIncrement(savedAge, map['updated_at'].toString());
+            }
           }
         });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _checkAutoIncrement(int savedAge, String updatedAtStr) async {
+    try {
+      final updatedAt = DateTime.parse(updatedAtStr);
+      final now = DateTime.now();
+      final updatedDate = DateTime(updatedAt.year, updatedAt.month, updatedAt.day);
+      final nowDate = DateTime(now.year, now.month, now.day);
+      final diff = nowDate.difference(updatedDate).inDays;
+
+      if (diff > 0) {
+        final newAge = savedAge + diff;
+        if (mounted) {
+          setState(() {
+            _exactAgeCtrl.text = newAge.toString();
+          });
+          // Silent auto-save to ensure database is in sync with displayed age
+          await FirebaseService.instance.savePlantConfig(
+            phase: _derivedPhase.label,
+            phaseRange: _derivedPhase.range,
+            exactAge: newAge,
+            latitude: _latitude,
+            longitude: _longitude,
+          );
+        }
       }
     } catch (_) {}
   }
@@ -136,11 +177,10 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
             const SizedBox(height: 12),
             _ConfirmRow(
               label: 'Fase',
-              value: '${_selectedPhase.label} (${_selectedPhase.range})',
+              value: '${_derivedPhase.label} (${_derivedPhase.range})',
             ),
-            if (_selectedPhase == PlantPhase.perkembangan &&
-                _exactAgeCtrl.text.isNotEmpty)
-              _ConfirmRow(label: 'Umur Pasti', value: '${_exactAgeCtrl.text} hari'),
+            if (_exactAgeCtrl.text.isNotEmpty)
+              _ConfirmRow(label: 'Umur Pasti', value: '${_exactAgeCtrl.text} hari (HST)'),
             if (_latitude != null)
               _ConfirmRow(
                 label: 'Latitude',
@@ -166,40 +206,31 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
   // ── Save to Firebase ─────────────────────────────────────────────────────
 
   Future<void> _onConfirm() async {
-    // Validate exact age for Perkembangan phase
-    if (_selectedPhase == PlantPhase.perkembangan) {
-      final val = int.tryParse(_exactAgeCtrl.text);
-      if (val == null ||
-          val < _selectedPhase.minAge ||
-          val > _selectedPhase.maxAge) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Masukkan umur yang valid (31–70 hari) untuk Fase Perkembangan.',
-            ),
-          ),
-        );
-        return;
-      }
+    if (_hst == null || _hst! < 0 || _hst! > 210) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Masukkan umur yang valid (0–210 hari).'),
+        ),
+      );
+      return;
     }
 
     final yes = await _showConfirmDialog();
     if (!yes) return;
 
     try {
-      final age = _selectedPhase == PlantPhase.perkembangan
-          ? int.tryParse(_exactAgeCtrl.text)
-          : null;
-
       await FirebaseService.instance.savePlantConfig(
-        phase: _selectedPhase.label,
-        phaseRange: _selectedPhase.range,
-        exactAge: age,
+        phase: _derivedPhase.label,
+        phaseRange: _derivedPhase.range,
+        exactAge: _hst,
         latitude: _latitude,
         longitude: _longitude,
       );
 
       if (mounted) {
+        setState(() {
+          _isEditingAge = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Konfigurasi berhasil disimpan!')),
         );
@@ -259,112 +290,80 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Dropdown
-                      Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: cs.outline),
-                          borderRadius: BorderRadius.circular(12),
-                          color: Colors.white,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 4),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<PlantPhase>(
-                            value: _selectedPhase,
-                            isExpanded: true,
-                            icon: Icon(Icons.expand_more,
-                                color: cs.onSurfaceVariant),
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(color: cs.onSurface),
-                            items: PlantPhase.values.map((phase) {
-                              return DropdownMenuItem<PlantPhase>(
-                                value: phase,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(phase.label),
-                                    Text(
-                                      phase.range,
-                                      style:
-                                          theme.textTheme.labelSmall?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
+                      // Exact age input
+                      Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Umur Tanaman (HST)',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: cs.onSurface,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedPhase = val;
-                                  if (val != PlantPhase.perkembangan) {
-                                    _exactAgeCtrl.clear();
-                                  }
-                                });
-                              }
-                            },
-                          ),
+                                if (!_isEditingAge)
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      setState(() {
+                                        _isEditingAge = true;
+                                      });
+                                    },
+                                    icon: const Icon(Icons.edit, size: 16),
+                                    label: const Text('Edit'),
+                                    style: TextButton.styleFrom(
+                                      minimumSize: Size.zero,
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: _exactAgeCtrl,
+                              readOnly: !_isEditingAge,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: InputDecoration(
+                                hintText: 'Contoh: 45',
+                                hintStyle: TextStyle(
+                                    color: cs.onSurfaceVariant),
+                                suffixText: 'hari',
+                                border: OutlineInputBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(12),
+                                ),
+                                contentPadding:
+                                    const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                                filled: true,
+                                fillColor: _isEditingAge 
+                                    ? Colors.white 
+                                    : cs.surfaceContainerHighest.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Fase otomatis: ${_derivedPhase.label}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 
-                      // Exact age input — only for Perkembangan
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeInOut,
-                        child: _selectedPhase == PlantPhase.perkembangan
-                            ? Padding(
-                                padding: const EdgeInsets.only(top: 14),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Umur Pasti Tanaman (hari)',
-                                      style:
-                                          theme.textTheme.labelMedium?.copyWith(
-                                        color: cs.onSurface,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    TextField(
-                                      controller: _exactAgeCtrl,
-                                      keyboardType: TextInputType.number,
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.digitsOnly,
-                                      ],
-                                      decoration: InputDecoration(
-                                        hintText: 'Contoh: 45',
-                                        hintStyle: TextStyle(
-                                            color: cs.onSurfaceVariant),
-                                        suffixText: 'hari',
-                                        border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                          horizontal: 14,
-                                          vertical: 12,
-                                        ),
-                                        filled: true,
-                                        fillColor: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'Masukkan umur antara 31 dan 70 hari.',
-                                      style:
-                                          theme.textTheme.labelSmall?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
+                      const SizedBox(height: 24),
+                      PlantPhaseChart(currentHst: _hst),
                     ],
                   ),
                 ),

@@ -15,8 +15,8 @@ class MultiDayLineChart extends StatefulWidget {
   final List<SensorData> data;
   final double height;
 
-  /// true  → show temperature (°C) with 20–35 °C threshold
-  /// false → show soil moisture (%)  with 60–80 %  threshold
+  /// true  → show temperature (°C)
+  /// false → show soil moisture (%) with 60–80 % threshold
   final bool showTemperature;
 
   @override
@@ -126,15 +126,13 @@ class _MultiDayLineChartState extends State<MultiDayLineChart> {
       if ((maxY - minY) < 10) maxY = minY + 10;
     }
 
-    // ── Threshold dashed lines ───────────────────────────────────────────────
+    // ── Threshold dashed lines ────────────────────────────────────────────
     final thresholds = <HorizontalLine>[];
     if (!widget.showTemperature) {
       thresholds.add(_hline(60, Colors.green.shade500, 'Min 60%'));
       thresholds.add(_hline(80, Colors.green.shade700, 'Max 80%'));
-    } else {
-      thresholds.add(_hline(20, Colors.blue.shade400, 'Min 20°C'));
-      thresholds.add(_hline(35, Colors.orange.shade500, 'Max 35°C'));
     }
+    // Temperature: no threshold lines
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -276,8 +274,9 @@ class _MultiDayLineChartState extends State<MultiDayLineChart> {
           ),
         ),
         const SizedBox(height: 6),
-        // Threshold legend
-        _ThresholdLegend(showTemperature: widget.showTemperature),
+        // Threshold legend (only shown for soil moisture)
+        if (!widget.showTemperature)
+          _ThresholdLegend(showTemperature: widget.showTemperature),
       ],
     );
   }
@@ -297,26 +296,6 @@ class _MultiDayLineChartState extends State<MultiDayLineChart> {
         ),
       );
 
-  Widget _empty(ThemeData theme) => Card(
-        child: SizedBox(
-          height: widget.height,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.bar_chart_outlined,
-                    size: 40, color: Colors.grey.shade300),
-                const SizedBox(height: 8),
-                Text(
-                  'Belum ada data untuk rentang tanggal ini',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: Colors.grey.shade400),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
 }
 
 // ── Legend widgets ─────────────────────────────────────────────────────────
@@ -365,10 +344,7 @@ class _ThresholdLegend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = showTemperature
-        ? [
-            (Colors.blue.shade400, 'Ambang Min 20°C'),
-            (Colors.orange.shade500, 'Ambang Max 35°C'),
-          ]
+        ? <(Color, String)>[]
         : [
             (Colors.green.shade500, 'Ambang Min 60%'),
             (Colors.green.shade700, 'Ambang Max 80%'),

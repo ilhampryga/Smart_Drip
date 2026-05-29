@@ -39,7 +39,7 @@ class FirebaseService {
   /// Latest ETc value.
   Stream<double> get etcStream {
     return _db
-        .ref('etc_calculation/latest/etc_value')
+        .ref('etc/latest/etc_value')
         .onValue
         .map((event) => (event.snapshot.value as num?)?.toDouble() ?? 0.0);
   }
@@ -111,7 +111,7 @@ class FirebaseService {
 
       for (final entry in dateMap.entries) {
         try {
-          final entryDate = DateTime.parse(entry.key as String);
+          final entryDate = DateTime.parse(entry.key);
           // Only include past days within range (exclude today and older than cutoff)
           if (entryDate.isBefore(cutoff)) continue;
           if (!entryDate.isBefore(todayStart)) continue; // skip today
@@ -171,7 +171,7 @@ class FirebaseService {
       for (final entry in dateMap.entries) {
         // entry.key must be "YYYY-MM-DD"
         try {
-          final entryDate = DateTime.parse(entry.key as String);
+          final entryDate = DateTime.parse(entry.key);
           if (entryDate.isBefore(cutoff)) continue; // too old
         } catch (_) {
           continue;
@@ -191,20 +191,90 @@ class FirebaseService {
   }
 
 
-  /// Irrigation history for TODAY only — reads directly from
-  /// irrigation_log/history/{YYYY-MM-DD} (entries stored directly under date node).
+  Stream<List<Map<String, dynamic>>> get irrigationDailyLogTodayStream {
+    final todayStr = _todayDateString();
+    return _db.ref('irrigation_log/daily_log/$todayStr').onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <Map<String, dynamic>>[];
+
+      Map<dynamic, dynamic> safeMap;
+      if (raw is List) {
+        safeMap = raw.asMap();
+      } else if (raw is Map) {
+        safeMap = raw;
+      } else {
+        return <Map<String, dynamic>>[];
+      }
+
+      final map = _deepConvert(safeMap);
+      final list = <Map<String, dynamic>>[];
+      for (final v in map.values) {
+        if (v is Map) list.add(Map<String, dynamic>.from(v));
+      }
+      list.sort((a, b) =>
+          ((a['timestamp'] ?? '') as String)
+              .compareTo((b['timestamp'] ?? '') as String));
+      return list;
+    });
+  }
+
+  /// Irrigation for TODAY — reads from irrigation_log/history/{YYYY-MM-DD}.
   Stream<List<Map<String, dynamic>>> get irrigationTodayStream {
     final todayStr = _todayDateString();
     return _db.ref('irrigation_log/history/$todayStr').onValue.map((event) {
       final raw = event.snapshot.value;
       if (raw == null) return <Map<String, dynamic>>[];
-      final map = _deepConvert(raw as Map<dynamic, dynamic>);
+
+      Map<dynamic, dynamic> safeMap;
+      if (raw is List) {
+        safeMap = raw.asMap();
+      } else if (raw is Map) {
+        safeMap = raw;
+      } else {
+        return <Map<String, dynamic>>[];
+      }
+
+      final map = _deepConvert(safeMap);
       final list = <Map<String, dynamic>>[];
       for (final v in map.values) {
-        if (v is Map<String, dynamic>) list.add(v);
+        if (v is Map) list.add(Map<String, dynamic>.from(v));
       }
       list.sort((a, b) =>
-          (a['start_time'] as String).compareTo(b['start_time'] as String));
+          ((a['timestamp'] ?? '') as String)
+              .compareTo((b['timestamp'] ?? '') as String));
+      return list;
+    });
+  }
+
+  /// Irrigation data untuk tanggal spesifik.
+  /// - Jika [dateStr] == hari ini → baca dari irrigation_log/daily_log/{dateStr}
+  /// - Selain itu             → baca dari irrigation_log/history/{dateStr}
+  Stream<List<Map<String, dynamic>>> irrigationForDateStream(String dateStr) {
+    final todayStr = _todayDateString();
+    final path = dateStr == todayStr
+        ? 'irrigation_log/daily_log/$dateStr'
+        : 'irrigation_log/history/$dateStr';
+    return _db.ref(path).onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <Map<String, dynamic>>[];
+
+      Map<dynamic, dynamic> safeMap;
+      if (raw is List) {
+        safeMap = raw.asMap();
+      } else if (raw is Map) {
+        safeMap = raw;
+      } else {
+        return <Map<String, dynamic>>[];
+      }
+
+      final map = _deepConvert(safeMap);
+      final list = <Map<String, dynamic>>[];
+      for (final v in map.values) {
+        if (v is Map) list.add(Map<String, dynamic>.from(v));
+      }
+      list.sort((a, b) =>
+          ((a['timestamp'] ?? '') as String)
+              .compareTo((b['timestamp'] ?? '') as String));
       return list;
     });
   }
@@ -251,60 +321,93 @@ class FirebaseService {
     });
   }
 
-  /// Stream of irrigation data for a specific date — reads from
-  /// irrigation_log/history/{dateStr} (new nested structure).
+  /// Irrigation data untuk tanggal spesifik — baca dari history/{dateStr}.
   Stream<List<Map<String, dynamic>>> irrigationDailyLogStream(String dateStr) {
     return _db.ref('irrigation_log/history/$dateStr').onValue.map((event) {
       final raw = event.snapshot.value;
       if (raw == null) return <Map<String, dynamic>>[];
       final map = _deepConvert(raw as Map<dynamic, dynamic>);
-      final list = map.values
-          .whereType<Map<String, dynamic>>()
-          .toList()
-        ..sort((a, b) =>
-            (a['start_time'] as String).compareTo(b['start_time'] as String));
+      final list = <Map<String, dynamic>>[];
+      for (final v in map.values) {
+        if (v is Map) list.add(_deepConvert(v));
+      }
+      list.sort((a, b) =>
+          ((a['timestamp'] ?? '') as String)
+              .compareTo((b['timestamp'] ?? '') as String));
       return list;
     });
   }
 
-  /// All irrigation log history records across all dates, sorted by start_time ascending.
-  /// Structure: irrigation_log/history/{YYYY-MM-DD}/{key} → {duration, mode, start_time, ...}
+  /// Semua riwayat irigasi dari semua tanggal, diurutkan berdasarkan 'timestamp'.
+  /// Struktur: irrigation_log/history/{YYYY-MM-DD}/{key} → {duration, mode, timestamp, water_volume, ...}
   Stream<List<Map<String, dynamic>>> get irrigationHistoryStream {
     return _db.ref('irrigation_log/history').onValue.map((event) {
       final raw = event.snapshot.value;
       if (raw == null) return <Map<String, dynamic>>[];
-      final dateMap = _deepConvert(raw as Map<dynamic, dynamic>);
+      
+      Map<dynamic, dynamic> safeMap;
+      if (raw is List) {
+        // Jika Firebase terpaksa mengubahnya jadi List
+        safeMap = raw.asMap();
+      } else if (raw is Map) {
+        safeMap = raw;
+      } else {
+        return <Map<String, dynamic>>[];
+      }
+
+      final dateMap = _deepConvert(safeMap);
       final list = <Map<String, dynamic>>[];
+      
       for (final dateEntry in dateMap.values) {
         if (dateEntry is! Map) continue;
-        final records = dateEntry is Map<String, dynamic>
-            ? dateEntry
-            : _deepConvert(dateEntry);
-        for (final v in records.values) {
-          if (v is Map<String, dynamic>) list.add(v);
+        
+        // Iterasi melalui record irigasi di dalam tanggal tersebut (data_001, data_002, dst)
+        for (final record in dateEntry.values) {
+          if (record is Map) {
+            // Konversi aman memastikan tipe datanya Map<String, dynamic>
+            list.add(Map<String, dynamic>.from(record));
+          }
         }
       }
+      
       list.sort((a, b) =>
-          (a['start_time'] as String).compareTo(b['start_time'] as String));
+          ((a['timestamp'] ?? '') as String)
+              .compareTo((b['timestamp'] ?? '') as String));
       return list;
     });
   }
 
   /// All ETc history records sorted by calculation_date ascending.
   Stream<List<Map<String, dynamic>>> get etcHistoryStream {
-    return _db.ref('etc_calculation/history').onValue.map((event) {
+    return _db.ref('etc/history').onValue.map((event) {
       final raw = event.snapshot.value;
       if (raw == null) {
         return <Map<String, dynamic>>[];
       }
-      final map = Map<String, dynamic>.from(raw as Map);
-      final list =
-          map.values.map((v) => Map<String, dynamic>.from(v as Map)).toList()
-            ..sort(
-              (a, b) => (a['calculation_date'] as String).compareTo(
-                b['calculation_date'] as String,
-              ),
-            );
+      
+      Map<dynamic, dynamic> safeMap;
+      if (raw is Map) {
+        safeMap = raw;
+      } else {
+        return <Map<String, dynamic>>[];
+      }
+
+      final dateMap = _deepConvert(safeMap);
+      final list = <Map<String, dynamic>>[];
+      
+      for (final entry in dateMap.entries) {
+        final dateStr = entry.key;
+        if (entry.value is Map) {
+          final record = Map<String, dynamic>.from(entry.value as Map);
+          record['calculation_date'] ??= dateStr;
+          list.add(record);
+        }
+      }
+      
+      list.sort((a, b) =>
+          ((a['calculation_date'] ?? '') as String).compareTo(
+              (b['calculation_date'] ?? '') as String));
+              
       return list;
     });
   }
@@ -344,7 +447,7 @@ class FirebaseService {
       if (longitude != null) 'longitude': longitude,
       'updated_at': DateTime.now().toIso8601String(),
     };
-    await _db.ref('plant_config/latest').set(data);
+    await _db.ref('plant_config/latest').update(data);
   }
 
   /// List of scheduled times (e.g., ["08:00", "16:30"]) and its active status.
