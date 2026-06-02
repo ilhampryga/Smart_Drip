@@ -8,6 +8,7 @@ class TimeSeriesLineChart extends StatefulWidget {
     required this.data,
     this.height = 210,
     this.showTemperature = true,
+    this.irrigationData = const [],
   });
 
   final List<SensorData> data;
@@ -16,6 +17,7 @@ class TimeSeriesLineChart extends StatefulWidget {
   /// true  → show temperature (°C)
   /// false → show soil moisture (%) with 60–80 % threshold
   final bool showTemperature;
+  final List<Map<String, dynamic>> irrigationData;
 
   @override
   State<TimeSeriesLineChart> createState() => _TimeSeriesLineChartState();
@@ -23,6 +25,50 @@ class TimeSeriesLineChart extends StatefulWidget {
 
 class _TimeSeriesLineChartState extends State<TimeSeriesLineChart> {
   int _touchedIndex = -1;
+
+  bool _isIrrigationTime(DateTime sensorTime, List<DateTime> irrigationTimes) {
+    for (final irrigTime in irrigationTimes) {
+      final diffToIrrig = sensorTime.difference(irrigTime).inMinutes.abs();
+      if (diffToIrrig <= 15) return true;
+    }
+    return false;
+  }
+
+  List<int> _findDailyMinMaxIndices(List<SensorData> sortedData) {
+    if (sortedData.isEmpty) return [];
+    final Map<String, List<int>> dailyIndices = {};
+    for (int i = 0; i < sortedData.length; i++) {
+      final ts = sortedData[i].timestamp;
+      if (ts.length >= 10) {
+        final date = ts.substring(0, 10);
+        dailyIndices.putIfAbsent(date, () => []).add(i);
+      }
+    }
+    final List<int> result = [];
+    for (final indices in dailyIndices.values) {
+      if (indices.isEmpty) continue;
+      int minIdx = indices[0];
+      int maxIdx = indices[0];
+      double minVal = sortedData[minIdx].temperature;
+      double maxVal = sortedData[maxIdx].temperature;
+      for (final idx in indices) {
+        final temp = sortedData[idx].temperature;
+        if (temp < minVal) {
+          minVal = temp;
+          minIdx = idx;
+        }
+        if (temp > maxVal) {
+          maxVal = temp;
+          maxIdx = idx;
+        }
+      }
+      result.add(minIdx);
+      if (minIdx != maxIdx) {
+        result.add(maxIdx);
+      }
+    }
+    return result;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +115,33 @@ class _TimeSeriesLineChartState extends State<TimeSeriesLineChart> {
 
     final color = widget.showTemperature ? cs.primary : Colors.blueAccent;
 
+    final List<int> targetIndices = [];
+    if (!isEmpty) {
+      if (widget.showTemperature) {
+        targetIndices.addAll(_findDailyMinMaxIndices(sortedData));
+      } else {
+        if (widget.irrigationData.isNotEmpty) {
+          final List<DateTime> irrigationTimes = [];
+          for (final irrig in widget.irrigationData) {
+            final ts = irrig['timestamp'] as String?;
+            if (ts != null && ts.isNotEmpty) {
+              try {
+                irrigationTimes.add(DateTime.parse(ts));
+              } catch (_) {}
+            }
+          }
+          for (int i = 0; i < sortedData.length; i++) {
+            try {
+              final sensorTime = DateTime.parse(sortedData[i].timestamp);
+              if (_isIrrigationTime(sensorTime, irrigationTimes)) {
+                targetIndices.add(i);
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    }
+
     final lines = [
       LineChartBarData(
         spots: spots,
@@ -78,7 +151,11 @@ class _TimeSeriesLineChartState extends State<TimeSeriesLineChart> {
         barWidth: 2,
         isStrokeCapRound: true,
         dotData: FlDotData(
-          show: spots.length <= 40,
+          show: true,
+          checkToShowDot: (spot, barData) {
+            final idx = barData.spots.indexOf(spot);
+            return targetIndices.contains(idx) || idx == _touchedIndex;
+          },
           getDotPainter: (_, __, ___, idx) => FlDotCirclePainter(
             radius: idx == _touchedIndex ? 4 : 2,
             color: color,
@@ -99,6 +176,25 @@ class _TimeSeriesLineChartState extends State<TimeSeriesLineChart> {
         ),
       )
     ];
+
+    final List<ShowingTooltipIndicators> tooltipIndicators = [];
+    if (!isEmpty) {
+      final List<int> activeIndices = List<int>.from(targetIndices);
+
+      if (_touchedIndex >= 0 && _touchedIndex < sortedData.length && !activeIndices.contains(_touchedIndex)) {
+        activeIndices.add(_touchedIndex);
+      }
+
+      for (final idx in activeIndices) {
+        if (idx >= 0 && idx < spots.length) {
+          tooltipIndicators.add(
+            ShowingTooltipIndicators([
+              LineBarSpot(lines[0], 0, spots[idx]),
+            ]),
+          );
+        }
+      }
+    }
 
     final thresholds = <HorizontalLine>[];
     if (!widget.showTemperature) {
@@ -127,16 +223,29 @@ class _TimeSeriesLineChartState extends State<TimeSeriesLineChart> {
                       minY: minY,
                       maxY: maxY,
                       clipData: const FlClipData.all(),
+                      showingTooltipIndicators: tooltipIndicators,
                       extraLinesData: ExtraLinesData(horizontalLines: thresholds),
                       gridData: FlGridData(
                         show: true,
                         drawVerticalLine: true,
-                        verticalInterval: xInterval,
+                        verticalInterval: 1,
                         horizontalInterval: (maxY - minY) / 5,
+                        checkToShowVerticalLine: (value) {
+                          final idx = value.round();
+                          if (idx <= 0 || idx >= sortedData.length) return false;
+                          final prevTs = sortedData[idx - 1].timestamp;
+                          final currTs = sortedData[idx].timestamp;
+                          if (prevTs.length < 10 || currTs.length < 10) return false;
+                          return prevTs.substring(0, 10) != currTs.substring(0, 10);
+                        },
                         getDrawingHorizontalLine: (_) =>
                             FlLine(color: Colors.grey.shade200, strokeWidth: 1),
                         getDrawingVerticalLine: (_) =>
-                            FlLine(color: Colors.grey.shade100, strokeWidth: 1),
+                            FlLine(
+                              color: Colors.grey.shade400.withValues(alpha: 0.5),
+                              strokeWidth: 1.2,
+                              dashArray: [4, 4],
+                            ),
                       ),
                       borderData: FlBorderData(show: false),
                       titlesData: FlTitlesData(
@@ -155,11 +264,25 @@ class _TimeSeriesLineChartState extends State<TimeSeriesLineChart> {
                           sideTitles: SideTitles(
                             showTitles: true,
                             reservedSize: 36,
-                            interval: xInterval,
+                            interval: 1,
                             getTitlesWidget: (val, _) {
                               if (isEmpty) return const SizedBox.shrink();
-                              final idx = val.toInt();
+                              final idx = val.round();
                               if (idx < 0 || idx >= sortedData.length) return const SizedBox.shrink();
+                              
+                              bool showTitle = false;
+                              if (idx == 0) {
+                                showTitle = true;
+                              } else {
+                                final prevTs = sortedData[idx - 1].timestamp;
+                                final currTs = sortedData[idx].timestamp;
+                                if (prevTs.length >= 10 && currTs.length >= 10) {
+                                  showTitle = prevTs.substring(0, 10) != currTs.substring(0, 10);
+                                }
+                              }
+                              
+                              if (!showTitle) return const SizedBox.shrink();
+                              
                               try {
                                 final dt = DateTime.parse(sortedData[idx].timestamp);
                                 String text = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
@@ -168,7 +291,12 @@ class _TimeSeriesLineChartState extends State<TimeSeriesLineChart> {
                                   child: Text(
                                     text,
                                     textAlign: TextAlign.center,
-                                    style: const TextStyle(color: Colors.grey, fontSize: 9, height: 1.2),
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 9,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 );
                               } catch (_) {
@@ -183,34 +311,46 @@ class _TimeSeriesLineChartState extends State<TimeSeriesLineChart> {
                       lineTouchData: isEmpty
                           ? const LineTouchData(enabled: false)
                           : LineTouchData(
+                              enabled: true,
+                              handleBuiltInTouches: false,
                               touchCallback: (event, response) {
+                                if (!event.isInterestedForInteractions || response == null || response.lineBarSpots == null) {
+                                  setState(() {
+                                    _touchedIndex = -1;
+                                  });
+                                  return;
+                                }
                                 setState(() {
-                                  _touchedIndex = response?.lineBarSpots?.first.spotIndex ?? -1;
+                                  _touchedIndex = response.lineBarSpots!.first.spotIndex;
                                 });
                               },
                               touchTooltipData: LineTouchTooltipData(
-                                getTooltipColor: (_) => cs.inverseSurface.withValues(alpha: 0.9),
+                                getTooltipColor: (_) => Colors.white.withValues(alpha: 0.95),
+                                tooltipBorder: BorderSide(color: Colors.grey.shade300, width: 0.5),
+                                tooltipPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                tooltipRoundedRadius: 6,
+                                fitInsideHorizontally: true,
+                                fitInsideVertically: true,
                                 getTooltipItems: (spots) => spots.map((s) {
-                                  final idx = s.x.toInt();
-                                  if (idx < 0 || idx >= sortedData.length) {
-                                    return LineTooltipItem('', const TextStyle());
+                                  final idx = s.spotIndex;
+                                  String details = '';
+                                  if (idx == _touchedIndex && idx >= 0 && idx < sortedData.length) {
+                                    try {
+                                      final dt = DateTime.parse(sortedData[idx].timestamp);
+                                      final dateStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
+                                      final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                                      details = '$dateStr $timeStr\n';
+                                    } catch (_) {}
                                   }
-                                  try {
-                                    final dt = DateTime.parse(sortedData[idx].timestamp);
-                                    final dateStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
-                                    final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-                                    final unit = widget.showTemperature ? '°C' : '%';
-                                    return LineTooltipItem(
-                                      '$dateStr $timeStr\n${s.y.toStringAsFixed(1)} $unit',
-                                      TextStyle(
-                                        color: cs.onInverseSurface,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 11,
-                                      ),
-                                    );
-                                  } catch (_) {
-                                    return LineTooltipItem('${s.y.toStringAsFixed(1)}', const TextStyle());
-                                  }
+                                  final unit = widget.showTemperature ? '°C' : '%';
+                                  return LineTooltipItem(
+                                    '$details${s.y.toStringAsFixed(1)} $unit',
+                                    TextStyle(
+                                      color: widget.showTemperature ? cs.primary : Colors.blueAccent,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10,
+                                    ),
+                                  );
                                 }).toList(),
                               ),
                             ),

@@ -12,22 +12,16 @@ class SensorLineChart extends StatefulWidget {
     this.height = 180,
     this.showBothLines = true,
     this.showTemperature = true,
-    /// When true, X-axis is fixed to 0–23 (hour of day) for today's chart.
     this.is24HourMode = false,
+    this.irrigationData = const [],
   });
 
-  /// Ordered sensor history list (oldest → newest).
   final List<SensorData> data;
   final double height;
-
-  /// When true, renders both temperature & soil-moisture lines.
   final bool showBothLines;
-
-  /// When [showBothLines] is false, controls which single line to show.
   final bool showTemperature;
-
-  /// When true, X-axis is fixed 0–23 (hours). Labels shown every 3 h.
   final bool is24HourMode;
+  final List<Map<String, dynamic>> irrigationData;
 
   @override
   State<SensorLineChart> createState() => _SensorLineChartState();
@@ -36,7 +30,7 @@ class SensorLineChart extends StatefulWidget {
 class _SensorLineChartState extends State<SensorLineChart> {
   int _touchedIndex = -1;
 
-  /// Parse hour (0–23) from an ISO-8601 or "YYYY-MM-DD HH:mm:ss" timestamp.
+  /// Parse hour (0–23) from an ISO-8601 or "YYYY-MM-DD" timestamp.
   double _hourFromTimestamp(String ts) {
     try {
       final dt = DateTime.parse(ts);
@@ -46,12 +40,58 @@ class _SensorLineChartState extends State<SensorLineChart> {
     }
   }
 
+  bool _isIrrigationTime(DateTime sensorTime, List<DateTime> irrigationTimes) {
+    for (final irrigTime in irrigationTimes) {
+      final diffToIrrig = sensorTime.difference(irrigTime).inMinutes.abs();
+      if (diffToIrrig <= 15) return true;
+    }
+    return false;
+  }
+
+  List<int> _findDailyMinMaxIndices(List<SensorData> data) {
+    if (data.isEmpty) return [];
+    final Map<String, List<int>> dailyIndices = {};
+    for (int i = 0; i < data.length; i++) {
+      final ts = data[i].timestamp;
+      if (ts.length >= 10) {
+        final date = ts.substring(0, 10);
+        dailyIndices.putIfAbsent(date, () => []).add(i);
+      }
+    }
+    final List<int> result = [];
+    for (final indices in dailyIndices.values) {
+      if (indices.isEmpty) continue;
+      int minIdx = indices[0];
+      int maxIdx = indices[0];
+      double minVal = data[minIdx].temperature;
+      double maxVal = data[maxIdx].temperature;
+      for (final idx in indices) {
+        final temp = data[idx].temperature;
+        if (temp < minVal) {
+          minVal = temp;
+          minIdx = idx;
+        }
+        if (temp > maxVal) {
+          maxVal = temp;
+          maxIdx = idx;
+        }
+      }
+      result.add(minIdx);
+      if (minIdx != maxIdx) {
+        result.add(maxIdx);
+      }
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
-    if (widget.data.isEmpty) {
+    final isEmpty = widget.data.isEmpty;
+
+    if (isEmpty) {
       return _buildEmpty(context, theme);
     }
 
@@ -70,6 +110,10 @@ class _SensorLineChartState extends State<SensorLineChart> {
       tempSpots.add(FlSpot(x, d.temperature));
       moistSpots.add(FlSpot(x, d.soilMoisture));
     }
+
+    // fl_chart requires spots to be sorted by X to prevent "monotonically increasing" assertion errors.
+    tempSpots.sort((a, b) => a.x.compareTo(b.x));
+    moistSpots.sort((a, b) => a.x.compareTo(b.x));
 
     if (widget.is24HourMode && tempSpots.isNotEmpty) {
       dataMinX = tempSpots.map((s) => s.x).reduce((a, b) => a < b ? a : b);
@@ -108,7 +152,33 @@ class _SensorLineChartState extends State<SensorLineChart> {
       maxY = minY + 5;
     }
 
-    final bool showDots = widget.data.length <= 30;
+    final List<int> targetIndices = [];
+    if (!isEmpty) {
+      if (widget.showTemperature) {
+        targetIndices.addAll(_findDailyMinMaxIndices(widget.data));
+      } else {
+        if (widget.irrigationData.isNotEmpty) {
+          final List<DateTime> irrigationTimes = [];
+          for (final irrig in widget.irrigationData) {
+            final ts = irrig['timestamp'] as String?;
+            if (ts != null && ts.isNotEmpty) {
+              try {
+                irrigationTimes.add(DateTime.parse(ts));
+              } catch (_) {}
+            }
+          }
+          for (int i = 0; i < widget.data.length; i++) {
+            final d = widget.data[i];
+            try {
+              final sensorTime = DateTime.parse(d.timestamp);
+              if (_isIrrigationTime(sensorTime, irrigationTimes)) {
+                targetIndices.add(i);
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    }
 
     final lines = <LineChartBarData>[];
 
@@ -117,8 +187,8 @@ class _SensorLineChartState extends State<SensorLineChart> {
         _buildLine(
           spots: tempSpots,
           color: cs.primary,
+          targetIndices: targetIndices,
           isCurved: true,
-          showDots: showDots,
           gradient: LinearGradient(
             colors: [cs.primary.withValues(alpha: 0.18), Colors.transparent],
             begin: Alignment.topCenter,
@@ -133,8 +203,8 @@ class _SensorLineChartState extends State<SensorLineChart> {
         _buildLine(
           spots: moistSpots,
           color: Colors.blueAccent,
+          targetIndices: targetIndices,
           isCurved: true,
-          showDots: showDots,
           gradient: LinearGradient(
             colors: [
               Colors.blueAccent.withValues(alpha: 0.12),
@@ -145,6 +215,29 @@ class _SensorLineChartState extends State<SensorLineChart> {
           ),
         ),
       );
+    }
+
+    final List<ShowingTooltipIndicators> tooltipIndicators = [];
+    if (!isEmpty) {
+      final List<int> activeIndices = List<int>.from(targetIndices);
+
+      if (_touchedIndex >= 0 && _touchedIndex < widget.data.length && !activeIndices.contains(_touchedIndex)) {
+        activeIndices.add(_touchedIndex);
+      }
+
+      final lineIndex = widget.showBothLines ? (widget.showTemperature ? 0 : 1) : 0;
+      if (lineIndex < lines.length) {
+        final line = lines[lineIndex];
+        for (final idx in activeIndices) {
+          if (idx >= 0 && idx < line.spots.length) {
+            tooltipIndicators.add(
+              ShowingTooltipIndicators([
+                LineBarSpot(line, lineIndex, line.spots[idx]),
+              ]),
+            );
+          }
+        }
+      }
     }
 
     // Build bottom titles configuration
@@ -227,6 +320,7 @@ class _SensorLineChartState extends State<SensorLineChart> {
               minY: minY,
               maxY: maxY,
               clipData: const FlClipData.all(),
+              showingTooltipIndicators: tooltipIndicators,
               gridData: FlGridData(
                 show: true,
                 drawVerticalLine: widget.is24HourMode,
@@ -262,37 +356,51 @@ class _SensorLineChartState extends State<SensorLineChart> {
                 ),
               ),
               lineTouchData: LineTouchData(
-                touchCallback: (event, response) {
-                  setState(() {
-                    _touchedIndex =
-                        response?.lineBarSpots?.first.spotIndex ?? -1;
-                  });
-                },
+                enabled: !isEmpty,
+                handleBuiltInTouches: false,
+                touchCallback: isEmpty
+                    ? null
+                    : (event, response) {
+                        if (!event.isInterestedForInteractions || response == null || response.lineBarSpots == null) {
+                          setState(() {
+                            _touchedIndex = -1;
+                          });
+                          return;
+                        }
+                        setState(() {
+                          _touchedIndex = response.lineBarSpots!.first.spotIndex;
+                        });
+                      },
                 touchTooltipData: LineTouchTooltipData(
-                  getTooltipColor: (_) =>
-                      cs.inverseSurface.withValues(alpha: 0.88),
+                  getTooltipColor: (_) => Colors.white.withValues(alpha: 0.95),
+                  tooltipBorder: BorderSide(color: Colors.grey.shade300, width: 0.5),
+                  tooltipPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  tooltipRoundedRadius: 6,
+                  fitInsideHorizontally: true,
+                  fitInsideVertically: true,
                   getTooltipItems: (spots) {
                     return spots.map((s) {
                       final isTemp =
                           s.barIndex == 0 && widget.showBothLines ||
                           (s.barIndex == 0 && widget.showTemperature);
-                      // In 24h mode, show the actual time from data point
-                      String timeLabel = '';
-                      if (widget.is24HourMode) {
-                        final matchIdx = s.spotIndex;
-                        if (matchIdx >= 0 && matchIdx < widget.data.length) {
-                          final ts = widget.data[matchIdx].timestamp;
-                          timeLabel = ts.length >= 16
-                              ? '\n${ts.substring(11, 16)}'
-                              : '';
-                        }
+                      
+                      final idx = s.spotIndex;
+                      String details = '';
+                      if (idx == _touchedIndex && idx >= 0 && idx < widget.data.length) {
+                        try {
+                          final dt = DateTime.parse(widget.data[idx].timestamp);
+                          final dateStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
+                          final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                          details = '$dateStr $timeStr\n';
+                        } catch (_) {}
                       }
+
                       return LineTooltipItem(
-                        '${s.y.toStringAsFixed(1)} ${isTemp ? "°C" : "%"}$timeLabel',
+                        '$details${s.y.toStringAsFixed(1)} ${isTemp ? "°C" : "%"}',
                         TextStyle(
-                          color: cs.onInverseSurface,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
+                          color: isTemp ? cs.primary : Colors.blueAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
                         ),
                       );
                     }).toList();
@@ -310,8 +418,8 @@ class _SensorLineChartState extends State<SensorLineChart> {
   LineChartBarData _buildLine({
     required List<FlSpot> spots,
     required Color color,
+    required List<int> targetIndices,
     bool isCurved = true,
-    bool showDots = true,
     LinearGradient? gradient,
   }) {
     return LineChartBarData(
@@ -322,7 +430,11 @@ class _SensorLineChartState extends State<SensorLineChart> {
       barWidth: 2.5,
       isStrokeCapRound: true,
       dotData: FlDotData(
-        show: showDots,
+        show: true,
+        checkToShowDot: (spot, barData) {
+          final idx = barData.spots.indexOf(spot);
+          return targetIndices.contains(idx) || idx == _touchedIndex;
+        },
         getDotPainter: (spot, _, __, idx) => FlDotCirclePainter(
           radius: idx == _touchedIndex ? 5 : 3,
           color: color,

@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'firebase_service.dart';
 
-/// Checks on startup (and optionally periodically) whether the date has
-/// changed since the last archive run, and if so archives yesterday's data
-/// to the Firebase `daily_log` paths.
+/// Checks on startup whether old daily_log data exists,
+/// then moves old date nodes from daily_log to history.
 ///
 /// Uses a simple in-memory marker — if the app is killed and restarted on a
 /// new day, the archive still runs because `_lastArchivedDate` starts null.
@@ -15,15 +14,13 @@ class DailyArchiveService {
   Timer? _midnightTimer;
 
   /// Call once from [DashboardScreen.initState] (or app init).
-  /// Archives data for the *previous* day if not yet done today.
+  /// Archives data for any previous days if not yet done today.
   Future<void> checkAndArchive() async {
     final today = _todayStr();
     if (_lastArchivedDate == today) return; // Already ran today
 
-    // Archive yesterday's data
-    final yesterday = _yesterdayStr();
     try {
-      await FirebaseService.instance.archiveDailyData(yesterday);
+      await FirebaseService.instance.moveOldDailyLogsToHistory();
       _lastArchivedDate = today;
     } catch (e) {
       // Silently fail — next app restart will try again
@@ -52,12 +49,7 @@ class DailyArchiveService {
         '${n.day.toString().padLeft(2, '0')}';
   }
 
-  String _yesterdayStr() {
-    final n = DateTime.now().subtract(const Duration(days: 1));
-    return '${n.year.toString().padLeft(4, '0')}-'
-        '${n.month.toString().padLeft(2, '0')}-'
-        '${n.day.toString().padLeft(2, '0')}';
-  }
+
 
   void dispose() {
     _midnightTimer?.cancel();

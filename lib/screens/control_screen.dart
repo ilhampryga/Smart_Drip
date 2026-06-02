@@ -31,29 +31,13 @@ class ControlScreen extends StatelessWidget {
 
                   return Column(
                     children: [
-                      _IrrigationModeCard(
-                        etcFuzzyEnabled: etcFuzzy,
-                        nonEtcEnabled: nonEtc,
-                        onEtcFuzzyChanged: (val) async {
-                          if (val) {
-                            await svc.setIrrigationMode('ETC_FUZZY');
-                          }
-                        },
-                        onNonEtcChanged: (val) async {
-                          if (val) {
-                            await svc.setIrrigationMode('NO_FUZZY_ETC');
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
                       StreamBuilder<List<Map<String, dynamic>>>(
                         stream: svc.irrigationTodayStream,
                         builder: (context, irrigSnap) {
                           final hasIrrigationToday =
                               (irrigSnap.data ?? []).isNotEmpty;
                           return _ScheduleCard(
-                            isNoEtcFuzzy:
-                                ctrl != null && !ctrl.isEtcFuzzy,
+                            isNoEtcFuzzy: ctrl != null && !ctrl.isEtcFuzzy,
                             hasIrrigationToday: hasIrrigationToday,
                           );
                         },
@@ -73,151 +57,6 @@ class ControlScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _IrrigationModeCard extends StatelessWidget {
-  const _IrrigationModeCard({
-    required this.etcFuzzyEnabled,
-    required this.nonEtcEnabled,
-    required this.onEtcFuzzyChanged,
-    required this.onNonEtcChanged,
-  });
-
-  final bool etcFuzzyEnabled;
-  final bool nonEtcEnabled;
-  final ValueChanged<bool> onEtcFuzzyChanged;
-  final ValueChanged<bool> onNonEtcChanged;
-
-  Future<bool> _confirmModeChange(BuildContext context, String modeName) async {
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(
-              Icons.swap_horiz_rounded,
-              color: Theme.of(context).colorScheme.primary,
-              size: 26,
-            ),
-            const SizedBox(width: 10),
-            const Text('Ganti Mode'),
-          ],
-        ),
-        content: Text(
-          'Apakah Anda yakin ingin mengubah mode irigasi ke "$modeName"?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Tidak'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ya'),
-          ),
-        ],
-      ),
-    );
-    return confirmed ?? false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Mode Irigasi',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: cs.onSurface,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ModeRow(
-              title: 'ETc + Fuzzy',
-              subtitle: 'Irigasi berdasar ETc & Fuzzy Logic',
-              value: etcFuzzyEnabled,
-              onChanged: (val) async {
-                if (!val) return; // only allow turning ON (exclusive mode)
-                final yes = await _confirmModeChange(
-                    context, 'ETc + Fuzzy');
-                if (yes) onEtcFuzzyChanged(val);
-              },
-            ),
-            Divider(color: cs.outlineVariant, height: 24),
-            _ModeRow(
-              title: 'No Fuzzy dan ETc',
-              subtitle: 'Irigasi tanpa Fuzzy dan ETc',
-              value: nonEtcEnabled,
-              onChanged: (val) async {
-                if (!val) return;
-                final yes =
-                    await _confirmModeChange(context, 'No Fuzzy dan ETc');
-                if (yes) onNonEtcChanged(val);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ModeRow extends StatelessWidget {
-  const _ModeRow({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: cs.onSurface,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Switch(value: value, onChanged: onChanged),
-      ],
     );
   }
 }
@@ -244,7 +83,10 @@ class _ScheduleCardState extends State<_ScheduleCard> {
   bool _disabling = false; // guard agar tidak loop
 
   Future<bool> _confirmAction(
-      BuildContext context, String title, String content) async {
+    BuildContext context,
+    String title,
+    String content,
+  ) async {
     final cs = Theme.of(context).colorScheme;
 
     final confirmed = await showDialog<bool>(
@@ -288,7 +130,10 @@ class _ScheduleCardState extends State<_ScheduleCard> {
   }
 
   Future<void> _pickTime(
-      BuildContext context, bool currentActive, List<String> currentTimes) async {
+    BuildContext context,
+    bool currentActive,
+    List<String> currentTimes,
+  ) async {
     // Batasi maksimal 2 jadwal
     if (currentTimes.length >= 2) {
       if (!mounted) return;
@@ -320,20 +165,24 @@ class _ScheduleCardState extends State<_ScheduleCard> {
       final timeStr = '$hour:$minute';
 
       if (!currentTimes.contains(timeStr)) {
-        final yes = await _confirmAction(context, 'Simpan Jadwal',
-            'Apakah Anda yakin ingin menambahkan jadwal penyiraman pada pukul $timeStr?');
+        final yes = await _confirmAction(
+          context,
+          'Simpan Jadwal',
+          'Apakah Anda yakin ingin menambahkan jadwal penyiraman pada pukul $timeStr?',
+        );
         if (yes) {
           final newTimes = List<String>.from(currentTimes)..add(timeStr);
-          await FirebaseService.instance
-              .saveIrrigationSchedule(currentActive, newTimes);
+          await FirebaseService.instance.saveIrrigationSchedule(
+            currentActive,
+            newTimes,
+          );
         }
       }
     }
   }
 
   /// Jika mode NO_FUZZY_ETC aktif dan jadwal masih ON → paksa OFF ke Firebase.
-  Future<void> _autoDisableIfNeeded(
-      bool isActive, List<String> times) async {
+  Future<void> _autoDisableIfNeeded(bool isActive, List<String> times) async {
     if (widget.isNoEtcFuzzy && isActive && !_disabling) {
       _disabling = true;
       await FirebaseService.instance.saveIrrigationSchedule(false, times);
@@ -350,8 +199,7 @@ class _ScheduleCardState extends State<_ScheduleCard> {
     return StreamBuilder<Map<String, dynamic>>(
       stream: svc.irrigationScheduleStream,
       builder: (context, snap) {
-        final data =
-            snap.data ?? {'is_active': false, 'times': <String>[]};
+        final data = snap.data ?? {'is_active': false, 'times': <String>[]};
 
         // Jika mode NO_FUZZY_ETC, paksa is_active = false
         final rawIsActive = data['is_active'] as bool;
@@ -368,10 +216,8 @@ class _ScheduleCardState extends State<_ScheduleCard> {
 
         // Kunci seluruh kartu jika:
         // - Mode NO_FUZZY_ETC aktif, ATAU
-        // - Ada data irigasi hari ini, ATAU
-        // - Salah satu jadwal sudah terlewati
-        final isLocked =
-            widget.isNoEtcFuzzy || widget.hasIrrigationToday || hasPassedTime;
+        // - Ada data irigasi hari ini
+        final isLocked = widget.isNoEtcFuzzy || widget.hasIrrigationToday;
         final isMaxReached = times.length >= 2;
 
         return Opacity(
@@ -398,15 +244,16 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                         onChanged: isLocked
                             ? null
                             : (val) async {
-                                final action =
-                                    val ? 'mengaktifkan' : 'menonaktifkan';
+                                final action = val
+                                    ? 'mengaktifkan'
+                                    : 'menonaktifkan';
                                 final yes = await _confirmAction(
-                                    context,
-                                    'Konfirmasi Jadwal',
-                                    'Apakah Anda yakin ingin $action jadwal otomatis?');
+                                  context,
+                                  'Konfirmasi Jadwal',
+                                  'Apakah Anda yakin ingin $action jadwal otomatis?',
+                                );
                                 if (yes) {
-                                  await svc.saveIrrigationSchedule(
-                                      val, times);
+                                  await svc.saveIrrigationSchedule(val, times);
                                 }
                               },
                       ),
@@ -414,87 +261,69 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                   ),
 
                   // Banner peringatan — urutan prioritas: irigasi hari ini > jadwal terlewati > NO_FUZZY_ETC
-                  if (widget.hasIrrigationToday) ...
-                    [
-                      const SizedBox(height: 6),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: cs.secondaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.check_circle_outline_rounded,
-                                size: 14, color: cs.onSecondaryContainer),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Jadwal dikunci karena data irigasi sudah tersimpan hari ini.',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                    color: cs.onSecondaryContainer),
+                  if (widget.hasIrrigationToday) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cs.secondaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle_outline_rounded,
+                            size: 14,
+                            color: cs.onSecondaryContainer,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Jadwal dikunci karena data irigasi sudah tersimpan hari ini.',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: cs.onSecondaryContainer,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ]
-                  else if (hasPassedTime) ...
-                    [
-                      const SizedBox(height: 6),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: cs.tertiaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.schedule_rounded,
-                                size: 14, color: cs.onTertiaryContainer),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Jadwal dikunci karena waktu penyiraman sudah terlewati hari ini.',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                    color: cs.onTertiaryContainer),
+                    ),
+                  ] else if (widget.isNoEtcFuzzy) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cs.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.lock_outline_rounded,
+                            size: 14,
+                            color: cs.onErrorContainer,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Jadwal dinonaktifkan karena mode "No Fuzzy & ETc" aktif.',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: cs.onErrorContainer,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ]
-                  else if (widget.isNoEtcFuzzy) ...
-                    [
-                      const SizedBox(height: 6),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: cs.errorContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.lock_outline_rounded,
-                                size: 14, color: cs.onErrorContainer),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Jadwal dinonaktifkan karena mode "No Fuzzy & ETc" aktif.',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                    color: cs.onErrorContainer),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
+                  ],
 
                   const SizedBox(height: 8),
                   Text(
@@ -511,9 +340,10 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                       ...times.map((t) {
                         // Semua chip dikunci setelah isLocked = true
                         return InputChip(
-                          label: Text(t,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600)),
+                          label: Text(
+                            t,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                           avatar: Icon(
                             _isTimePassed(t)
                                 ? Icons.check_circle_outline
@@ -527,14 +357,17 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                               ? null
                               : () async {
                                   final yes = await _confirmAction(
-                                      context,
-                                      'Hapus Jadwal',
-                                      'Apakah Anda yakin ingin menghapus jadwal jam $t?');
+                                    context,
+                                    'Hapus Jadwal',
+                                    'Apakah Anda yakin ingin menghapus jadwal jam $t?',
+                                  );
                                   if (yes) {
-                                    final newTimes =
-                                        List<String>.from(times)..remove(t);
+                                    final newTimes = List<String>.from(times)
+                                      ..remove(t);
                                     await svc.saveIrrigationSchedule(
-                                        isActive, newTimes);
+                                      isActive,
+                                      newTimes,
+                                    );
                                   }
                                 },
                           deleteIconColor: cs.error,
@@ -555,8 +388,11 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                       if (!isLocked && isMaxReached)
                         Chip(
                           label: const Text('Maks. 2 jadwal tercapai'),
-                          avatar: Icon(Icons.info_outline,
-                              size: 14, color: cs.onSurfaceVariant),
+                          avatar: Icon(
+                            Icons.info_outline,
+                            size: 14,
+                            color: cs.onSurfaceVariant,
+                          ),
                           backgroundColor: cs.surfaceContainerHighest,
                           side: BorderSide.none,
                         ),
@@ -571,4 +407,3 @@ class _ScheduleCardState extends State<_ScheduleCard> {
     );
   }
 }
-

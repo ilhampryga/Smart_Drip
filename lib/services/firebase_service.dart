@@ -287,22 +287,59 @@ class FirebaseService {
         '${now.day.toString().padLeft(2, '0')}';
   }
 
-  /// Archives sensor and irrigation data for [dateStr] ("YYYY-MM-DD") to
-  /// daily_log paths in Firebase. Safe to call multiple times.
-  ///
-  /// Both sensor and irrigation data now use the same nested structure:
-  /// history/{dateStr}/{key}, so archiving just copies the subtree.
-  Future<void> archiveDailyData(String dateStr) async {
-    // --- Sensor archive (nested structure) ---
-    final sensorSnap = await _db.ref('sensor_data/history/$dateStr').get();
-    if (sensorSnap.value != null) {
-      await _db.ref('sensor_data/daily_log/$dateStr').set(sensorSnap.value);
+  /// Moves old (not today) daily_log data to history for both sensor and irrigation logs.
+  Future<void> moveOldDailyLogsToHistory() async {
+    final todayStr = _todayDateString();
+
+    Future<void> processNode(String basePath) async {
+      final dailyLogRef = _db.ref('$basePath/daily_log');
+      final historyRef = _db.ref('$basePath/history');
+
+      final snap = await dailyLogRef.get();
+      if (snap.value == null || snap.value is! Map) return;
+
+      final dailyMap = _deepConvert(snap.value as Map<dynamic, dynamic>);
+
+      for (final entry in dailyMap.entries) {
+        final dateStr = entry.key;
+
+        // Jangan pindahkan data hari ini.
+        if (dateStr == todayStr) continue;
+
+        // Pastikan key adalah format tanggal YYYY-MM-DD.
+        if (!_isValidDateKey(dateStr)) continue;
+
+        final data = entry.value;
+        if (data is! Map) continue;
+
+        try {
+          final updateData = _deepConvert(data);
+
+          // Salin dulu ke history.
+          await historyRef.child(dateStr).update(updateData);
+
+          // Hapus daily_log hanya setelah copy berhasil.
+          await dailyLogRef.child(dateStr).remove();
+        } catch (e) {
+          // ignore: avoid_print
+          print('[FirebaseService] Failed to move $basePath daily_log $dateStr: $e');
+        }
+      }
     }
 
-    // --- Irrigation archive (now also nested by date) ---
-    final irrigSnap = await _db.ref('irrigation_log/history/$dateStr').get();
-    if (irrigSnap.value != null) {
-      await _db.ref('irrigation_log/daily_log/$dateStr').set(irrigSnap.value);
+    await processNode('sensor_data');
+    await processNode('irrigation_log');
+  }
+
+  bool _isValidDateKey(String value) {
+    try {
+      final parsed = DateTime.parse(value);
+      return value.length == 10 &&
+          value[4] == '-' &&
+          value[7] == '-' &&
+          parsed.year > 2000;
+    } catch (_) {
+      return false;
     }
   }
 

@@ -80,7 +80,7 @@ class _WaterUsageLineChartState extends State<WaterUsageLineChart> {
         barWidth: 2,
         isStrokeCapRound: true,
         dotData: FlDotData(
-          show: sortedData.length <= 40,
+          show: true,
           getDotPainter: (_, __, ___, idx) => FlDotCirclePainter(
             radius: idx == _touchedIndex ? 4 : 2,
             color: pureColor,
@@ -98,7 +98,7 @@ class _WaterUsageLineChartState extends State<WaterUsageLineChart> {
         barWidth: 2,
         isStrokeCapRound: true,
         dotData: FlDotData(
-          show: sortedData.length <= 40,
+          show: true,
           getDotPainter: (_, __, ___, idx) => FlDotCirclePainter(
             radius: idx == _touchedIndex ? 4 : 2,
             color: fuzzyColor,
@@ -190,50 +190,65 @@ class _WaterUsageLineChartState extends State<WaterUsageLineChart> {
                     rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
-                  lineTouchData: isEmpty
-                      ? const LineTouchData(enabled: false)
-                      : LineTouchData(
-                          touchCallback: (event, response) {
+                  showingTooltipIndicators: isEmpty
+                      ? []
+                      : List.generate(sortedData.length, (index) {
+                          return ShowingTooltipIndicators([
+                            LineBarSpot(lines[0], 0, lines[0].spots[index]),
+                            LineBarSpot(lines[1], 1, lines[1].spots[index]),
+                          ]);
+                        }),
+                  lineTouchData: LineTouchData(
+                    enabled: !isEmpty,
+                    handleBuiltInTouches: false,
+                    touchCallback: isEmpty
+                        ? null
+                        : (event, response) {
+                            if (!event.isInterestedForInteractions || response == null || response.lineBarSpots == null) {
+                              setState(() {
+                                _touchedIndex = -1;
+                              });
+                              return;
+                            }
                             setState(() {
-                              _touchedIndex = response?.lineBarSpots?.first.spotIndex ?? -1;
+                              _touchedIndex = response.lineBarSpots!.first.spotIndex;
                             });
                           },
-                          touchTooltipData: LineTouchTooltipData(
-                            getTooltipColor: (_) => cs.inverseSurface.withValues(alpha: 0.9),
-                            getTooltipItems: (spots) {
-                              if (spots.isEmpty) return [];
-                              final idx = spots.first.spotIndex;
-                              if (idx < 0 || idx >= sortedData.length) return [];
-                              
-                              final data = sortedData[idx];
-                              String dateStr = data.date;
-                              try {
-                                final dt = DateTime.parse(data.date);
-                                dateStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
-                              } catch (_) {}
-
-                              // We return tooltip items corresponding to each line
-                              // spots is sorted by line index
-                              return spots.map((s) {
-                                final isPure = s.barIndex == 0;
-                                final label = isPure ? 'ETc Murni' : 'ETc+Fuzzy';
-                                final valStr = s.y.toStringAsFixed(0);
-                                
-                                // Only show date on the first item to avoid repetition
-                                final prefix = isPure ? '$dateStr\n' : '';
-                                
-                                return LineTooltipItem(
-                                  '$prefix$label: $valStr mL',
-                                  TextStyle(
-                                    color: isPure ? Colors.orange.shade300 : Colors.blue.shade200,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 11,
-                                  ),
-                                );
-                              }).toList();
-                            },
-                          ),
-                        ),
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipColor: (_) => Colors.white.withValues(alpha: 0.95),
+                      tooltipBorder: BorderSide(color: Colors.grey.shade300, width: 0.5),
+                      tooltipPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      tooltipRoundedRadius: 6,
+                      fitInsideHorizontally: true,
+                      fitInsideVertically: true,
+                      getTooltipItems: (spots) {
+                        if (spots.isEmpty) return [];
+                        return spots.map((s) {
+                          final idx = s.spotIndex;
+                          String details = '';
+                          if (idx == _touchedIndex && idx >= 0 && idx < sortedData.length) {
+                            try {
+                              final dt = DateTime.parse(sortedData[idx].date);
+                              final dateStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
+                              details = '$dateStr\n';
+                            } catch (_) {
+                              details = '${sortedData[idx].date}\n';
+                            }
+                          }
+                          final isPure = s.barIndex == 0;
+                          final valStr = s.y.toStringAsFixed(0);
+                          return LineTooltipItem(
+                            '$details$valStr mL',
+                            TextStyle(
+                              color: isPure ? Colors.orange.shade700 : cs.primary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 9,
+                            ),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
                   lineBarsData: lines,
                 ),
               ),

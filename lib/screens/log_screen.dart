@@ -42,12 +42,12 @@ class _LogScreenState extends State<LogScreen> {
   @override
   void initState() {
     super.initState();
-    _sensorTodayStream     = _svc.sensorTodayStream;
-    _irrigationDefaultStream = _svc.irrigationHistoryStream;
-    _sensorHistoryStream   = _svc.sensorHistoryStream;
-    _irrigationHistoryStream = _svc.irrigationHistoryStream;
-    _etcHistoryStream = _svc.etcHistoryStream;
-    _plantConfigStream = _svc.plantConfigStream;
+    _sensorTodayStream     = _svc.sensorTodayStream.asBroadcastStream();
+    _irrigationDefaultStream = _svc.irrigationHistoryStream.asBroadcastStream();
+    _sensorHistoryStream   = _svc.sensorHistoryStream.asBroadcastStream();
+    _irrigationHistoryStream = _svc.irrigationHistoryStream.asBroadcastStream();
+    _etcHistoryStream = _svc.etcHistoryStream.asBroadcastStream();
+    _plantConfigStream = _svc.plantConfigStream.asBroadcastStream();
   }
 
   String _dateStr(DateTime dt) =>
@@ -60,7 +60,7 @@ class _LogScreenState extends State<LogScreen> {
   Stream<List<Map<String, dynamic>>> _getIrrigationSingleDayStream(String date) {
     if (_irrigationFilteredDate != date || _irrigationFilteredStream == null) {
       _irrigationFilteredDate = date;
-      _irrigationFilteredStream = _svc.irrigationForDateStream(date);
+      _irrigationFilteredStream = _svc.irrigationForDateStream(date).asBroadcastStream();
     }
     return _irrigationFilteredStream!;
   }
@@ -74,8 +74,11 @@ class _LogScreenState extends State<LogScreen> {
         if (_startDate != null && dt.isBefore(_startDate!)) {
           return false;
         }
-        if (_endDate != null && dt.isAfter(_endDate!.add(const Duration(days: 1)))) {
-          return false;
+        if (_endDate != null) {
+          final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59, 999);
+          if (dt.isAfter(end)) {
+            return false;
+          }
         }
         return true;
       } catch (_) {
@@ -95,8 +98,11 @@ class _LogScreenState extends State<LogScreen> {
         if (_startDate != null && dt.isBefore(_startDate!)) {
           return false;
         }
-        if (_endDate != null && dt.isAfter(_endDate!.add(const Duration(days: 1)))) {
-          return false;
+        if (_endDate != null) {
+          final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59, 999);
+          if (dt.isAfter(end)) {
+            return false;
+          }
         }
         return true;
       } catch (_) {
@@ -144,7 +150,10 @@ class _LogScreenState extends State<LogScreen> {
       try {
         final dt = DateTime.parse(dateStr);
         if (_startDate != null && dt.isBefore(_startDate!)) continue;
-        if (_endDate != null && dt.isAfter(_endDate!.add(const Duration(days: 1)))) continue;
+        if (_endDate != null) {
+          final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59, 999);
+          if (dt.isAfter(end)) continue;
+        }
         
         final fuzzyVol = fuzzyMap[dateStr] ?? 0.0;
         final etcVal = etcMap[dateStr] ?? 0.0;
@@ -178,10 +187,6 @@ class _LogScreenState extends State<LogScreen> {
     return false;
   }
 
-  int? get _dayCount {
-    if (_startDate == null || _endDate == null) return null;
-    return _endDate!.difference(_startDate!).inDays + 1;
-  }
 
   void _resetFilter() {
     setState(() {
@@ -215,6 +220,7 @@ class _LogScreenState extends State<LogScreen> {
   Widget _buildTodayDefault(
       BuildContext context, ThemeData theme, ColorScheme cs) {
     return StreamBuilder<List<SensorData>>(
+      key: const ValueKey('default_view'),
       stream: _sensorTodayStream,
       builder: (context, sensorSnap) {
         return StreamBuilder<List<Map<String, dynamic>>>(
@@ -251,6 +257,7 @@ class _LogScreenState extends State<LogScreen> {
                               context, theme, cs,
                               sensors: sensors,
                               waterUsages: waterUsages,
+                              irrigation: irrigation,
                               use24h: true,
                               useMultiDay: false,
                             ),
@@ -280,6 +287,7 @@ class _LogScreenState extends State<LogScreen> {
     }
 
     return StreamBuilder<List<SensorData>>(
+      key: const ValueKey('filter_view'),
       stream: _sensorHistoryStream,
       builder: (context, sensorSnap) {
         return StreamBuilder<List<Map<String, dynamic>>>(
@@ -358,6 +366,7 @@ class _LogScreenState extends State<LogScreen> {
                             context, theme, cs,
                             sensors: sensors,
                             waterUsages: waterUsages,
+                            irrigation: irrigation,
                             use24h: use24h,
                             useMultiDay: useMultiDay,
                           ),
@@ -404,6 +413,7 @@ class _LogScreenState extends State<LogScreen> {
     ColorScheme cs, {
     required List<SensorData> sensors,
     required List<DailyWaterUsage> waterUsages,
+    required List<Map<String, dynamic>> irrigation,
     required bool use24h,
     required bool useMultiDay,
   }) {
@@ -449,7 +459,12 @@ class _LogScreenState extends State<LogScreen> {
         ),
         const SizedBox(height: 6),
         if (useMultiDay)
-          TimeSeriesLineChart(data: sensors, height: 200, showTemperature: false)
+          TimeSeriesLineChart(
+            data: sensors,
+            height: 200,
+            showTemperature: false,
+            irrigationData: irrigation,
+          )
         else
           SensorLineChart(
             data: sensors,
@@ -457,6 +472,7 @@ class _LogScreenState extends State<LogScreen> {
             showBothLines: false,
             showTemperature: false,
             is24HourMode: use24h,
+            irrigationData: irrigation,
           ),
         const SizedBox(height: 8),
       ],
