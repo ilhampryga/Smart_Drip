@@ -126,16 +126,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       return Column(
                         children: [
                           // ── Sensor / pump cards ──────────────────────────
-                          GridView.count(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            childAspectRatio: 1.1,
-                            children: [
-                              SensorCard(
-                                label: 'Suhu',
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              int crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
+                              double childAspectRatio = constraints.maxWidth > 600 ? 0.9 : 1.1;
+                              return GridView.count(
+                                crossAxisCount: crossAxisCount,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                childAspectRatio: childAspectRatio,
+                                children: [
+                                  SensorCard(
+                                    label: 'Suhu',
                                 value: tempStr,
                                 unit: '°C',
                                 icon: Icons.thermostat_outlined,
@@ -150,13 +154,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 initialValue: ctrl?.isPumpOn ?? false,
                                 statusStream: _pumpStatusStream,
                               ),
-                              SensorCard(
-                                label: 'ETc Hari Ini',
-                                value: etcStr,
-                                unit: 'mm/day',
-                                icon: Icons.eco_outlined,
-                              ),
-                            ],
+                                  SensorCard(
+                                    label: 'ETc Hari Ini',
+                                    value: etcStr,
+                                    unit: 'mm/day',
+                                    icon: Icons.eco_outlined,
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 16),
 

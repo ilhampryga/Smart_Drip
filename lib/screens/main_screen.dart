@@ -28,9 +28,57 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isWideScreen = MediaQuery.of(context).size.width >= 600;
+
+    final content = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: IndexedStack(index: _currentIndex, children: _pages),
+      ),
+    );
+
+    if (isWideScreen) {
+      return Scaffold(
+        body: Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (index) {
+                setState(() => _currentIndex = index);
+              },
+              labelType: NavigationRailLabelType.all,
+              destinations: [
+                NavigationRailDestination(
+                  icon: Icon(Icons.dashboard_outlined, color: cs.onSurfaceVariant),
+                  selectedIcon: Icon(Icons.dashboard, color: cs.primary),
+                  label: const Text('Dashboard'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.tune_outlined, color: cs.onSurfaceVariant),
+                  selectedIcon: Icon(Icons.tune, color: cs.primary),
+                  label: const Text('Kontrol'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.article_outlined, color: cs.onSurfaceVariant),
+                  selectedIcon: Icon(Icons.article, color: cs.primary),
+                  label: const Text('Log'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.eco_outlined, color: cs.onSurfaceVariant),
+                  selectedIcon: Icon(Icons.eco, color: cs.primary),
+                  label: const Text('Tanaman'),
+                ),
+              ],
+            ),
+            const VerticalDivider(thickness: 1, width: 1),
+            Expanded(child: content),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _pages),
+      body: content,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
