@@ -31,16 +31,8 @@ class ControlScreen extends StatelessWidget {
 
                   return Column(
                     children: [
-                      StreamBuilder<List<Map<String, dynamic>>>(
-                        stream: svc.irrigationTodayStream,
-                        builder: (context, irrigSnap) {
-                          final hasIrrigationToday =
-                              (irrigSnap.data ?? []).isNotEmpty;
-                          return _ScheduleCard(
-                            isNoEtcFuzzy: ctrl != null && !ctrl.isEtcFuzzy,
-                            hasIrrigationToday: hasIrrigationToday,
-                          );
-                        },
+                      _ScheduleCard(
+                        isNoEtcFuzzy: ctrl != null && !ctrl.isEtcFuzzy,
                       ),
                       const SizedBox(height: 12),
 
@@ -64,16 +56,11 @@ class ControlScreen extends StatelessWidget {
 class _ScheduleCard extends StatefulWidget {
   const _ScheduleCard({
     required this.isNoEtcFuzzy,
-    required this.hasIrrigationToday,
   });
 
   /// True saat mode aktif adalah NO_FUZZY_ETC.
   /// Jika true, jadwal otomatis di-disable dan UI di-gray-out.
   final bool isNoEtcFuzzy;
-
-  /// True jika sudah ada data irigasi yang tersimpan hari ini.
-  /// Jika true, seluruh jadwal dikunci dan tidak dapat diubah.
-  final bool hasIrrigationToday;
 
   @override
   State<_ScheduleCard> createState() => _ScheduleCardState();
@@ -211,13 +198,9 @@ class _ScheduleCardState extends State<_ScheduleCard> {
         // Nilai tampilan: selalu false saat NO_FUZZY_ETC
         final isActive = widget.isNoEtcFuzzy ? false : rawIsActive;
 
-        // Cek apakah ada jadwal yang sudah terlewati hari ini
-        final hasPassedTime = times.any(_isTimePassed);
-
         // Kunci seluruh kartu jika:
-        // - Mode NO_FUZZY_ETC aktif, ATAU
-        // - Ada data irigasi hari ini
-        final isLocked = widget.isNoEtcFuzzy || widget.hasIrrigationToday;
+        // - Mode NO_FUZZY_ETC aktif
+        final isLocked = widget.isNoEtcFuzzy;
         final isMaxReached = times.length >= 2;
 
         return Opacity(
@@ -260,39 +243,8 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                     ],
                   ),
 
-                  // Banner peringatan — urutan prioritas: irigasi hari ini > jadwal terlewati > NO_FUZZY_ETC
-                  if (widget.hasIrrigationToday) ...[
-                    const SizedBox(height: 6),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: cs.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle_outline_rounded,
-                            size: 14,
-                            color: cs.onSecondaryContainer,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Jadwal dikunci karena data irigasi sudah tersimpan hari ini.',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: cs.onSecondaryContainer,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ] else if (widget.isNoEtcFuzzy) ...[
+                  // Banner peringatan
+                  if (widget.isNoEtcFuzzy) ...[
                     const SizedBox(height: 6),
                     Container(
                       width: double.infinity,

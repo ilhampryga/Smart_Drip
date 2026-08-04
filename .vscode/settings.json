@@ -1,3 +1,4 @@
 {
-    "java.configuration.updateBuildConfiguration": "interactive"
+  "java.configuration.updateBuildConfiguration": "interactive",
+  "cmake.sourceDirectory": "C:/Users/62857/Documents/KULIAH/SEMESTER 7/SmartDrip/Smart_Drip/linux"
 }

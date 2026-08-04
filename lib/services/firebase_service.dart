@@ -8,10 +8,7 @@ class FirebaseService {
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
 
-  /// Recursively converts a Firebase map (`Map<Object?, Object?>`) to
-  /// `Map<String, dynamic>` so Dart type casts work on all platforms.
-  /// Android Firebase SDK returns nested maps as `Map<Object?, Object?>`,
-  /// while web returns them as `Map<String, dynamic>`. This normalises both.
+  // Konversi Map Firebase agar aman.
   static Map<String, dynamic> _deepConvert(Map<dynamic, dynamic> raw) {
     return Map<String, dynamic>.fromEntries(
       raw.entries.map((e) {
@@ -25,7 +22,7 @@ class FirebaseService {
     );
   }
 
-  /// Latest sensor reading (temperature + soil moisture).
+  // Data sensor terbaru.
   Stream<SensorData> get sensorDataStream {
     return _db.ref('sensor_data/latest').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -36,7 +33,7 @@ class FirebaseService {
     });
   }
 
-  /// Latest ETc value.
+  // Nilai ETc terbaru.
   Stream<double> get etcStream {
     return _db
         .ref('etc/latest/etc_value')
@@ -44,7 +41,7 @@ class FirebaseService {
         .map((event) => (event.snapshot.value as num?)?.toDouble() ?? 0.0);
   }
 
-  /// System control state (mode + pump status).
+  // Status kontrol sistem.
   Stream<SystemControl> get systemControlStream {
     return _db.ref('system_control').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -59,7 +56,7 @@ class FirebaseService {
     });
   }
 
-  /// Latest irrigation log entry.
+  // Log irigasi terbaru.
   Stream<Map<String, dynamic>> get irrigationLogStream {
     return _db.ref('irrigation_log/latest').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -70,9 +67,7 @@ class FirebaseService {
     });
   }
 
-
-  /// All sensor history records across all dates, sorted by timestamp ascending.
-  /// Structure: sensor_data/history/{YYYY-MM-DD}/{key} → {soil_moisture, temperature, timestamp}
+  // Riwayat sensor semua tanggal.
   Stream<List<SensorData>> get sensorHistoryStream {
     return _db.ref('sensor_data/history').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -93,9 +88,7 @@ class FirebaseService {
     });
   }
 
-  /// Sensor history from sensor_data/history filtered to the last [pastDays]
-  /// CLOSED calendar days (i.e. days before today — today is in daily_log).
-  /// E.g. pastDays=2 → yesterday and day-before-yesterday.
+  // Riwayat sensor beberapa hari terakhir.
   Stream<List<SensorData>> sensorHistoryRecentStream(int pastDays) {
     return _db.ref('sensor_data/history').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -103,7 +96,6 @@ class FirebaseService {
 
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
-      // cutoff = start of (today - pastDays)
       final cutoff = todayStart.subtract(Duration(days: pastDays));
 
       final dateMap = _deepConvert(raw as Map<dynamic, dynamic>);
@@ -112,9 +104,8 @@ class FirebaseService {
       for (final entry in dateMap.entries) {
         try {
           final entryDate = DateTime.parse(entry.key);
-          // Only include past days within range (exclude today and older than cutoff)
           if (entryDate.isBefore(cutoff)) continue;
-          if (!entryDate.isBefore(todayStart)) continue; // skip today
+          if (!entryDate.isBefore(todayStart)) continue;
         } catch (_) {
           continue;
         }
@@ -132,9 +123,7 @@ class FirebaseService {
     });
   }
 
-
-  /// Sensor history for TODAY only — reads directly from
-  /// sensor_data/daily_log/{YYYY-MM-DD} (entries stored directly under date node).
+  // Data sensor hari ini.
   Stream<List<SensorData>> get sensorTodayStream {
     final todayStr = _todayDateString();
     return _db.ref('sensor_data/daily_log/$todayStr').onValue.map((event) {
@@ -152,9 +141,7 @@ class FirebaseService {
     });
   }
 
-  /// Sensor data from sensor_data/daily_log for the last [days] calendar days.
-  /// E.g. days=3 → today, yesterday, and the day before.
-  /// All date nodes within the range are merged into a single sorted list.
+  // Data sensor harian terbaru.
   Stream<List<SensorData>> sensorDailyLogRecentStream(int days) {
     return _db.ref('sensor_data/daily_log').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -162,17 +149,15 @@ class FirebaseService {
 
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
-      // Inclusive cutoff: start of (today - (days-1))
       final cutoff = todayStart.subtract(Duration(days: days - 1));
 
       final dateMap = _deepConvert(raw as Map<dynamic, dynamic>);
       final list = <SensorData>[];
 
       for (final entry in dateMap.entries) {
-        // entry.key must be "YYYY-MM-DD"
         try {
           final entryDate = DateTime.parse(entry.key);
-          if (entryDate.isBefore(cutoff)) continue; // too old
+          if (entryDate.isBefore(cutoff)) continue;
         } catch (_) {
           continue;
         }
@@ -190,7 +175,7 @@ class FirebaseService {
     });
   }
 
-
+  // Log irigasi hari ini.
   Stream<List<Map<String, dynamic>>> get irrigationDailyLogTodayStream {
     final todayStr = _todayDateString();
     return _db.ref('irrigation_log/daily_log/$todayStr').onValue.map((event) {
@@ -218,7 +203,7 @@ class FirebaseService {
     });
   }
 
-  /// Irrigation for TODAY — reads from irrigation_log/history/{YYYY-MM-DD}.
+  // Riwayat irigasi hari ini.
   Stream<List<Map<String, dynamic>>> get irrigationTodayStream {
     final todayStr = _todayDateString();
     return _db.ref('irrigation_log/history/$todayStr').onValue.map((event) {
@@ -246,9 +231,7 @@ class FirebaseService {
     });
   }
 
-  /// Irrigation data untuk tanggal spesifik.
-  /// - Jika [dateStr] == hari ini → baca dari irrigation_log/daily_log/{dateStr}
-  /// - Selain itu             → baca dari irrigation_log/history/{dateStr}
+  // Data irigasi tanggal tertentu.
   Stream<List<Map<String, dynamic>>> irrigationForDateStream(String dateStr) {
     final todayStr = _todayDateString();
     final path = dateStr == todayStr
@@ -279,7 +262,7 @@ class FirebaseService {
     });
   }
 
-  /// Returns today's date as "YYYY-MM-DD" string.
+  // Format tanggal hari ini (YYYY-MM-DD).
   String _todayDateString() {
     final now = DateTime.now();
     return '${now.year.toString().padLeft(4, '0')}-'
@@ -287,7 +270,7 @@ class FirebaseService {
         '${now.day.toString().padLeft(2, '0')}';
   }
 
-  /// Moves old (not today) daily_log data to history for both sensor and irrigation logs.
+  // Pindahkan log lama ke riwayat.
   Future<void> moveOldDailyLogsToHistory() async {
     final todayStr = _todayDateString();
 
@@ -303,10 +286,8 @@ class FirebaseService {
       for (final entry in dailyMap.entries) {
         final dateStr = entry.key;
 
-        // Jangan pindahkan data hari ini.
         if (dateStr == todayStr) continue;
 
-        // Pastikan key adalah format tanggal YYYY-MM-DD.
         if (!_isValidDateKey(dateStr)) continue;
 
         final data = entry.value;
@@ -315,14 +296,10 @@ class FirebaseService {
         try {
           final updateData = _deepConvert(data);
 
-          // Salin dulu ke history.
           await historyRef.child(dateStr).update(updateData);
-
-          // Hapus daily_log hanya setelah copy berhasil.
           await dailyLogRef.child(dateStr).remove();
         } catch (e) {
-          // ignore: avoid_print
-          print('[FirebaseService] Failed to move $basePath daily_log $dateStr: $e');
+          // Abaikan error
         }
       }
     }
@@ -331,6 +308,7 @@ class FirebaseService {
     await processNode('irrigation_log');
   }
 
+  // Cek validitas format tanggal.
   bool _isValidDateKey(String value) {
     try {
       final parsed = DateTime.parse(value);
@@ -343,8 +321,7 @@ class FirebaseService {
     }
   }
 
-  /// Stream of sensor data for a specific date — reads from
-  /// sensor_data/history/{dateStr} (new nested structure).
+  // Data sensor harian untuk tanggal tertentu.
   Stream<List<SensorData>> sensorDailyLogStream(String dateStr) {
     return _db.ref('sensor_data/history/$dateStr').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -358,7 +335,7 @@ class FirebaseService {
     });
   }
 
-  /// Irrigation data untuk tanggal spesifik — baca dari history/{dateStr}.
+  // Data irigasi harian untuk tanggal tertentu.
   Stream<List<Map<String, dynamic>>> irrigationDailyLogStream(String dateStr) {
     return _db.ref('irrigation_log/history/$dateStr').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -375,8 +352,7 @@ class FirebaseService {
     });
   }
 
-  /// Semua riwayat irigasi dari semua tanggal, diurutkan berdasarkan 'timestamp'.
-  /// Struktur: irrigation_log/history/{YYYY-MM-DD}/{key} → {duration, mode, timestamp, water_volume, ...}
+  // Riwayat irigasi semua tanggal.
   Stream<List<Map<String, dynamic>>> get irrigationHistoryStream {
     return _db.ref('irrigation_log/history').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -384,7 +360,6 @@ class FirebaseService {
       
       Map<dynamic, dynamic> safeMap;
       if (raw is List) {
-        // Jika Firebase terpaksa mengubahnya jadi List
         safeMap = raw.asMap();
       } else if (raw is Map) {
         safeMap = raw;
@@ -398,10 +373,8 @@ class FirebaseService {
       for (final dateEntry in dateMap.values) {
         if (dateEntry is! Map) continue;
         
-        // Iterasi melalui record irigasi di dalam tanggal tersebut (data_001, data_002, dst)
         for (final record in dateEntry.values) {
           if (record is Map) {
-            // Konversi aman memastikan tipe datanya Map<String, dynamic>
             list.add(Map<String, dynamic>.from(record));
           }
         }
@@ -414,52 +387,66 @@ class FirebaseService {
     });
   }
 
-  /// All ETc history records sorted by calculation_date ascending.
+  // Riwayat nilai ETc.
   Stream<List<Map<String, dynamic>>> get etcHistoryStream {
-    return _db.ref('etc/history').onValue.map((event) {
-      final raw = event.snapshot.value;
-      if (raw == null) {
-        return <Map<String, dynamic>>[];
-      }
-      
-      Map<dynamic, dynamic> safeMap;
-      if (raw is Map) {
-        safeMap = raw;
-      } else {
-        return <Map<String, dynamic>>[];
-      }
+    final etcRef = _db.ref('etc/history').onValue;
+    final etcCalcRef = _db.ref('etc_calculation/history').onValue;
 
-      final dateMap = _deepConvert(safeMap);
+    return etcRef.asyncMap((etcEvent) async {
       final list = <Map<String, dynamic>>[];
-      
-      for (final entry in dateMap.entries) {
-        final dateStr = entry.key;
-        if (entry.value is Map) {
-          final record = Map<String, dynamic>.from(entry.value as Map);
-          record['calculation_date'] ??= dateStr;
-          list.add(record);
+
+      void processRaw(dynamic raw) {
+        if (raw == null) return;
+        final safeMap = raw is Map ? raw : <dynamic, dynamic>{};
+        final dateMap = _deepConvert(safeMap);
+        for (final entry in dateMap.entries) {
+          final dateStr = entry.key;
+          if (entry.value is Map) {
+            final record = Map<String, dynamic>.from(entry.value as Map);
+            record['calculation_date'] ??= dateStr;
+            list.add(record);
+          } else if (entry.value is num) {
+            list.add({
+              'calculation_date': dateStr,
+              'etc_value': (entry.value as num).toDouble(),
+            });
+          }
         }
       }
+
+      processRaw(etcEvent.snapshot.value);
       
-      list.sort((a, b) =>
+      try {
+        final calcEvent = await _db.ref('etc_calculation/history').once();
+        processRaw(calcEvent.snapshot.value);
+      } catch (_) {}
+
+      final deduplicated = <String, Map<String, dynamic>>{};
+      for (final item in list) {
+        final date = item['calculation_date'] as String? ?? '';
+        if (date.isNotEmpty) deduplicated[date] = item;
+      }
+
+      final finalList = deduplicated.values.toList();
+      finalList.sort((a, b) =>
           ((a['calculation_date'] ?? '') as String).compareTo(
               (b['calculation_date'] ?? '') as String));
               
-      return list;
+      return finalList;
     });
   }
 
-  /// Set pump status to true (ON) or false (OFF).
+  // Ubah status pompa.
   Future<void> setPumpStatus(bool isOn) async {
     await _db.ref('system_control/pump_status').set(isOn);
   }
 
-  /// Set irrigation mode: "ETC_FUZZY" or "NON_ETC".
+  // Ubah mode irigasi.
   Future<void> setIrrigationMode(String mode) async {
     await _db.ref('system_control/mode').set(mode);
   }
 
-  /// Stream of plant configuration (phase, latitude, etc.).
+  // Pengaturan tanaman terbaru.
   Stream<Map<String, dynamic>> get plantConfigStream {
     return _db.ref('plant_config/latest').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -468,7 +455,7 @@ class FirebaseService {
     });
   }
 
-  /// Save plant configuration data (phase, optional exact age, latitude).
+  // Simpan pengaturan tanaman.
   Future<void> savePlantConfig({
     required String phase,
     required String phaseRange,
@@ -487,7 +474,7 @@ class FirebaseService {
     await _db.ref('plant_config/latest').update(data);
   }
 
-  /// List of scheduled times (e.g., ["08:00", "16:30"]) and its active status.
+  // Jadwal irigasi.
   Stream<Map<String, dynamic>> get irrigationScheduleStream {
     return _db.ref('system_control/schedule').onValue.map((event) {
       final raw = event.snapshot.value;
@@ -503,7 +490,7 @@ class FirebaseService {
         times = List<String>.from(rawTimes.values.map((e) => e.toString()));
       }
       
-      times.sort(); // Sort times ascending
+      times.sort();
       
       return {
         'is_active': (map['is_active'] as bool?) ?? false,
@@ -512,7 +499,7 @@ class FirebaseService {
     });
   }
 
-  /// Save schedule configuration.
+  // Simpan jadwal irigasi.
   Future<void> saveIrrigationSchedule(bool isActive, List<String> times) async {
     await _db.ref('system_control/schedule').set({
       'is_active': isActive,

@@ -19,25 +19,26 @@ class _LogScreenState extends State<LogScreen> {
 
   final _svc = FirebaseService.instance;
 
-  // Key untuk force-rebuild DatePickerField saat reset
+  // Kunci rebuild date picker.
   Key _pickerKey = UniqueKey();
 
-  // ── Cached streams — dibuat sekali dan tidak berubah ──────────────────────
-  // Default view: sensor hari ini
+  // Stream data default.
   late final Stream<List<SensorData>> _sensorTodayStream;
-  // Default view: semua riwayat irigasi
   late final Stream<List<Map<String, dynamic>>> _irrigationDefaultStream;
-  // Filter view: semua riwayat sensor (history)
+  
+  // Stream data riwayat.
   late final Stream<List<SensorData>> _sensorHistoryStream;
-  // Filter view: semua riwayat irigasi (history) — untuk filter client-side
   late final Stream<List<Map<String, dynamic>>> _irrigationHistoryStream;
   
-  late final Stream<List<Map<String, dynamic>>> _etcHistoryStream;
-  late final Stream<Map<String, dynamic>> _plantConfigStream;
+  late final Stream<List<Map<String, dynamic>>> _etcDefaultStream;
+  late final Stream<Map<String, dynamic>> _plantConfigDefaultStream;
 
-  // Stream irigasi khusus filter tanggal tunggal (diperbarui saat filter berubah)
+  late final Stream<List<Map<String, dynamic>>> _etcFilterStream;
+  late final Stream<Map<String, dynamic>> _plantConfigFilterStream;
+
+  // Cache stream irigasi tanggal tunggal.
   Stream<List<Map<String, dynamic>>>? _irrigationFilteredStream;
-  String? _irrigationFilteredDate; // tanggal yang sedang di-cache
+  String? _irrigationFilteredDate;
 
   @override
   void initState() {
@@ -46,17 +47,19 @@ class _LogScreenState extends State<LogScreen> {
     _irrigationDefaultStream = _svc.irrigationHistoryStream.asBroadcastStream();
     _sensorHistoryStream   = _svc.sensorHistoryStream.asBroadcastStream();
     _irrigationHistoryStream = _svc.irrigationHistoryStream.asBroadcastStream();
-    _etcHistoryStream = _svc.etcHistoryStream.asBroadcastStream();
-    _plantConfigStream = _svc.plantConfigStream.asBroadcastStream();
+    _etcDefaultStream = _svc.etcHistoryStream.asBroadcastStream();
+    _plantConfigDefaultStream = _svc.plantConfigStream.asBroadcastStream();
+    _etcFilterStream = _svc.etcHistoryStream.asBroadcastStream();
+    _plantConfigFilterStream = _svc.plantConfigStream.asBroadcastStream();
   }
 
+  // Format tanggal YYYY-MM-DD.
   String _dateStr(DateTime dt) =>
       '${dt.year.toString().padLeft(4, '0')}-'
       '${dt.month.toString().padLeft(2, '0')}-'
       '${dt.day.toString().padLeft(2, '0')}';
 
-  // Kembalikan stream irigasi untuk filter tanggal tunggal.
-  // Cache per-tanggal agar tidak membuat stream baru setiap rebuild.
+  // Ambil stream irigasi untuk satu hari.
   Stream<List<Map<String, dynamic>>> _getIrrigationSingleDayStream(String date) {
     if (_irrigationFilteredDate != date || _irrigationFilteredStream == null) {
       _irrigationFilteredDate = date;
@@ -65,14 +68,18 @@ class _LogScreenState extends State<LogScreen> {
     return _irrigationFilteredStream!;
   }
 
+  // Filter data sensor.
   List<SensorData> _filterSensor(List<SensorData> all) {
     if (_startDate == null && _endDate == null) return all;
     return all.where((d) {
       if (d.timestamp.isEmpty) return true;
       try {
         final dt = DateTime.parse(d.timestamp);
-        if (_startDate != null && dt.isBefore(_startDate!)) {
-          return false;
+        if (_startDate != null) {
+          final start = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+          if (dt.isBefore(start)) {
+            return false;
+          }
         }
         if (_endDate != null) {
           final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59, 999);
@@ -87,6 +94,7 @@ class _LogScreenState extends State<LogScreen> {
     }).toList();
   }
 
+  // Filter data irigasi.
   List<Map<String, dynamic>> _filterIrrigation(
       List<Map<String, dynamic>> all) {
     if (_startDate == null && _endDate == null) return all;
@@ -95,8 +103,11 @@ class _LogScreenState extends State<LogScreen> {
       if (t.isEmpty) return true;
       try {
         final dt = DateTime.parse(t);
-        if (_startDate != null && dt.isBefore(_startDate!)) {
-          return false;
+        if (_startDate != null) {
+          final start = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+          if (dt.isBefore(start)) {
+            return false;
+          }
         }
         if (_endDate != null) {
           final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59, 999);
@@ -111,6 +122,7 @@ class _LogScreenState extends State<LogScreen> {
     }).toList();
   }
 
+  // Hitung penggunaan air harian.
   List<DailyWaterUsage> _calculateDailyWaterUsage(
       List<Map<String, dynamic>> irrigations,
       List<Map<String, dynamic>> etcHistory,
@@ -133,12 +145,16 @@ class _LogScreenState extends State<LogScreen> {
       }
     }
 
-    final wetArea = parseDoubleSafely(plantConfig['wet_area']);
+    var wetArea = parseDoubleSafely(plantConfig['wet_area']);
+    if (wetArea <= 0.0) {
+      wetArea = 0.01;
+    }
 
     final etcMap = <String, double>{};
     for (final etc in etcHistory) {
-      final dateStr = etc['calculation_date'] as String?;
-      if (dateStr != null) {
+      final dateStrFull = etc['calculation_date'] as String?;
+      if (dateStrFull != null && dateStrFull.length >= 10) {
+        final dateStr = dateStrFull.substring(0, 10);
         etcMap[dateStr] = parseDoubleSafely(etc['etc_value']);
       }
     }
@@ -149,7 +165,10 @@ class _LogScreenState extends State<LogScreen> {
     for (final dateStr in allDates) {
       try {
         final dt = DateTime.parse(dateStr);
-        if (_startDate != null && dt.isBefore(_startDate!)) continue;
+        if (_startDate != null) {
+          final start = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+          if (dt.isBefore(start)) continue;
+        }
         if (_endDate != null) {
           final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59, 999);
           if (dt.isAfter(end)) continue;
@@ -187,14 +206,12 @@ class _LogScreenState extends State<LogScreen> {
     return false;
   }
 
-
+  // Hapus filter.
   void _resetFilter() {
     setState(() {
       _startDate = null;
       _endDate = null;
-      // Force rebuild DatePickerField agar field kosong kembali
       _pickerKey = UniqueKey();
-      // Bersihkan cache stream filtered
       _irrigationFilteredStream = null;
       _irrigationFilteredDate = null;
     });
@@ -216,7 +233,7 @@ class _LogScreenState extends State<LogScreen> {
     );
   }
 
-  /// Tampilan default: sensor hari ini + semua riwayat irigasi
+  // Tampilan default log hari ini.
   Widget _buildTodayDefault(
       BuildContext context, ThemeData theme, ColorScheme cs) {
     return StreamBuilder<List<SensorData>>(
@@ -227,10 +244,10 @@ class _LogScreenState extends State<LogScreen> {
           stream: _irrigationDefaultStream,
           builder: (context, irrigSnap) {
             return StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _etcHistoryStream,
+              stream: _etcDefaultStream,
               builder: (context, etcSnap) {
                 return StreamBuilder<Map<String, dynamic>>(
-                  stream: _plantConfigStream,
+                  stream: _plantConfigDefaultStream,
                   builder: (context, configSnap) {
                     final sensors = sensorSnap.data ?? [];
                     final irrigation = irrigSnap.data ?? [];
@@ -274,15 +291,13 @@ class _LogScreenState extends State<LogScreen> {
     );
   }
 
-  /// Tampilan dengan filter tanggal aktif
+  // Tampilan dengan filter tanggal aktif.
   Widget _buildWithFilter(
       BuildContext context, ThemeData theme, ColorScheme cs) {
-    // Pilih stream irigasi yang sesuai — STABIL (tidak buat stream baru setiap rebuild)
     final Stream<List<Map<String, dynamic>>> irrigStream;
     if (_isSingleDay) {
       irrigStream = _getIrrigationSingleDayStream(_dateStr(_startDate!));
     } else {
-      // Multi-day atau hanya satu tanggal: pakai history + filter client-side
       irrigStream = _irrigationHistoryStream;
     }
 
@@ -294,10 +309,10 @@ class _LogScreenState extends State<LogScreen> {
           stream: irrigStream,
           builder: (context, irrigSnap) {
             return StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _etcHistoryStream,
+              stream: _etcFilterStream,
               builder: (context, etcSnap) {
                 return StreamBuilder<Map<String, dynamic>>(
-                  stream: _plantConfigStream,
+                  stream: _plantConfigFilterStream,
                   builder: (context, configSnap) {
                     final allSensors = sensorSnap.data ?? [];
                     final allIrrigation = irrigSnap.data ?? [];
@@ -383,7 +398,7 @@ class _LogScreenState extends State<LogScreen> {
     );
   }
 
-  /// Row date pickers — pakai _pickerKey agar bisa force reset
+  // Row tanggal pemilih.
   Widget _buildDatePickers(
       BuildContext context, ThemeData theme, ColorScheme cs) {
     return Row(
@@ -407,6 +422,7 @@ class _LogScreenState extends State<LogScreen> {
     );
   }
 
+  // Susunan grafik.
   Widget _buildCharts(
     BuildContext context,
     ThemeData theme,
@@ -503,10 +519,7 @@ class _LogScreenState extends State<LogScreen> {
       _LegendDot(color: color, label: label);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Local widgets
-// ──────────────────────────────────────────────────────────────────────────────
-
+// Komponen chip info.
 class _InfoChip extends StatelessWidget {
   const _InfoChip({
     required this.icon,
@@ -546,6 +559,7 @@ class _InfoChip extends StatelessWidget {
   }
 }
 
+// Komponen legend dot.
 class _LegendDot extends StatelessWidget {
   const _LegendDot({required this.color, required this.label});
   final Color color;

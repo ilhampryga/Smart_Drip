@@ -4,7 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../services/firebase_service.dart';
 import '../widgets/plant_phase_chart.dart';
 
-/// Possible plant growth phases.
+// Pilihan fase pertumbuhan.
 enum PlantPhase {
   awal('Fase Awal', '0–30 Hari', 0, 30),
   perkembangan('Fase Perkembangan', '31–70 Hari', 31, 70),
@@ -91,7 +91,7 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
           setState(() {
             _exactAgeCtrl.text = newAge.toString();
           });
-          // Silent auto-save to ensure database is in sync with displayed age
+          // Simpan otomatis agar database tersinkron.
           await FirebaseService.instance.savePlantConfig(
             phase: _derivedPhase.label,
             phaseRange: _derivedPhase.range,
@@ -110,8 +110,7 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
     super.dispose();
   }
 
-  // ── GPS ─────────────────────────────────────────────────────────────────
-
+  // Fungsi ambil lokasi.
   Future<void> _fetchLocation() async {
     setState(() {
       _gpsLoading = true;
@@ -119,7 +118,7 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
     });
 
     try {
-      // Check & request permission
+      // Cek dan minta izin lokasi.
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -151,8 +150,7 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
     }
   }
 
-  // ── Confirmation dialog ──────────────────────────────────────────────────
-
+  // Fungsi dialog konfirmasi.
   Future<bool> _showConfirmDialog() async {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
@@ -203,8 +201,7 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
     return confirmed ?? false;
   }
 
-  // ── Save to Firebase ─────────────────────────────────────────────────────
-
+  // Fungsi simpan.
   Future<void> _onConfirm() async {
     if (_hst == null || _hst! < 0 || _hst! > 210) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -244,8 +241,6 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
     }
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -260,7 +255,6 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
 
-              // ── Plant phase card ──────────────────────────────────────────
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -290,7 +284,6 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Exact age input
                       Padding(
                         padding: const EdgeInsets.only(top: 14),
                         child: Column(
@@ -370,7 +363,6 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
               ),
               const SizedBox(height: 16),
 
-              // ── GPS location card ────────────────────────────────────────
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -400,7 +392,6 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Latitude display
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
@@ -456,7 +447,6 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
                       ],
                       const SizedBox(height: 12),
 
-                      // Get location button
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
@@ -488,7 +478,6 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
               ),
               const SizedBox(height: 24),
 
-              // ── Confirm button ───────────────────────────────────────────
               FilledButton.icon(
                 onPressed: _onConfirm,
                 icon: const Icon(Icons.check_circle_outline_rounded),
@@ -512,8 +501,7 @@ class _PlantConfigScreenState extends State<PlantConfigScreen> {
   }
 }
 
-// ── Helper confirmation row ─────────────────────────────────────────────────
-
+// Komponen baris konfirmasi.
 class _ConfirmRow extends StatelessWidget {
   const _ConfirmRow({required this.label, required this.value});
   final String label;
